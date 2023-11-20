@@ -141,3 +141,23 @@ def get_values_with_revisions(company_instance_id: str):
     if response.status_code != 200:
         raise Exception(f"API failed with {response.status_code}")
     return response.json()
+
+
+def get_standard_list():
+    """
+    List of all standards, e.g., esrs, ifrs, gri etc.
+    """
+    response = requests.get(srn_api_url + "standards")
+    if response.status_code != 200:
+        raise Exception(f"API failed with {response.status_code}")
+    return response.json()
+
+
+def get_standard_requirements():
+    """
+    Mapping of all the reporting requirements to the standard requirements
+    """
+    response = requests.get(srn_api_url + "standard_requirements")
+    if response.status_code != 200:
+        raise Exception(f"API failed with {response.status_code}")
+    return response.json()

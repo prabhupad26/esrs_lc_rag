@@ -4,8 +4,8 @@ import os
 from typing import Dict, List
 
 import yaml
-from rapidfuzz import fuzz
-from sqlalchemy import MetaData, create_engine
+from rapidfuzz import fuzz, process
+from sqlalchemy import MetaData, Table, create_engine
 from sqlalchemy.orm import Session
 from tqdm import tqdm
 
@@ -15,9 +15,12 @@ from annotations_utils.collect_api_data import (
     get_reporting_requirement_instance,
     get_srn_companies,
     get_srn_documents,
+    get_standard_list,
+    get_standard_requirements,
     get_values_with_revisions,
 )
 from annotations_utils.data_model import (
+    Base,
     BlobLvlAnnotations,
     BlobLvlAnnotationsModel,
     CompanyDetailsModel,
@@ -30,6 +33,10 @@ from annotations_utils.data_model import (
     IndicesModel,
     ReportingRequirements,
     ReportingRequirementsModel,
+    RptRequirementsMapping,
+    RptRequirementsMappingModel,
+    StandardsList,
+    StandardsListModel,
     ValuesWithRevisions,
     ValuesWithRevisionsModel,
 )
@@ -245,12 +252,8 @@ def get_page_data(page_number: int, json_fpath: str, logger, error_stat_dict=Non
     return page_data_dict, error_stat_dict
 
 
-def fuzzy_match_strings(line: str, tgt_list: List[str], threshold=97, partial_match=False) -> bool:
-    match_fn = fuzz.partial_ratio if partial_match else fuzz.ratio
-    for tgt in tgt_list:
-        if match_fn(line, tgt) >= int(threshold):
-            return True
-    return False
+def fuzzy_match_strings(line: str, tgt_list: List[str], threshold=97):
+    return process.extractOne(line, tgt_list, scorer=fuzz.WRatio, score_cutoff=threshold)
 
 
 def collect_blob_lvl_annotations(session, logger, local_storage_path, error_stat_dict=None, fuzzy_match_thresh=97):
@@ -281,66 +284,105 @@ def collect_blob_lvl_annotations(session, logger, local_storage_path, error_stat
                 blobs, error_stat_dict = get_page_data(doc_page_num, parsed_data_file_path, logger, error_stat_dict)
                 if blobs:
                     # go blob by blob within the page
-                    for idx, page in enumerate(blobs):
-                        # match the db annotation with every single blob within the page
-                        if (page["class_name"] not in blob_type_ignore_list) and fuzzy_match_strings(
-                            page["text"].lower(), [annotation.value.lower()], threshold=fuzzy_match_thresh
-                        ):
-                            annotated_data_dict = {
-                                "blob_id": idx,
-                                "revision_id": annotation.id,
-                                "document_id": annotation.document_id,
-                                "blob_start_id": None,
-                                "blob_end_id": None,
-                                "blob_class_id": page["class_id"],
-                                "blob_class_name": page["class_name"],
-                                "blob_text": page["text"],
-                                "blob_box_x1": page["box"][0],
-                                "blob_box_y1": page["box"][1],
-                                "blob_box_x2": page["box"][2],
-                                "blob_box_y2": page["box"][3],
-                                "annotation_status": True,
-                            }
-                            blob_lvl_annotation_model = BlobLvlAnnotationsModel(**annotated_data_dict)
-                            blob_lvl_annotations_table = BlobLvlAnnotations(
-                                blob_id=blob_lvl_annotation_model.blob_id,
-                                revision_id=blob_lvl_annotation_model.revision_id,
-                                document_id=blob_lvl_annotation_model.document_id,
-                                blob_start_id=blob_lvl_annotation_model.blob_start_id,
-                                blob_end_id=blob_lvl_annotation_model.blob_end_id,
-                                blob_class_id=blob_lvl_annotation_model.blob_class_id,
-                                blob_class_name=blob_lvl_annotation_model.blob_class_name,
-                                blob_text=blob_lvl_annotation_model.blob_text,
-                                blob_box_x1=blob_lvl_annotation_model.blob_box_x1,
-                                blob_box_y1=blob_lvl_annotation_model.blob_box_y1,
-                                blob_box_x2=blob_lvl_annotation_model.blob_box_x2,
-                                blob_box_y2=blob_lvl_annotation_model.blob_box_y2,
-                                annotation_status=blob_lvl_annotation_model.annotation_status,
-                            )
-                            session.add(blob_lvl_annotations_table)
+                    blobs_value_list = [
+                        blob["text"].lower() for blob in blobs if blob["class_name"] not in blob_type_ignore_list
+                    ]
+                    fuzzy_matched = fuzzy_match_strings(
+                        annotation.value.lower(), blobs_value_list, threshold=fuzzy_match_thresh
+                    )
+                    if fuzzy_matched:
+                        _, _, fuzzily_matched_idx = fuzzy_matched
+                        blob_data = blobs[fuzzily_matched_idx]
+                        annotated_data_dict = {
+                            "blob_id": fuzzily_matched_idx,
+                            "revision_id": annotation.id,
+                            "document_id": annotation.document_id,
+                            "blob_start_id": None,
+                            "blob_end_id": None,
+                            "blob_class_id": blob_data["class_id"],
+                            "blob_class_name": blob_data["class_name"],
+                            "blob_text": blob_data["text"],
+                            "blob_box_x1": blob_data["box"][0],
+                            "blob_box_y1": blob_data["box"][1],
+                            "blob_box_x2": blob_data["box"][2],
+                            "blob_box_y2": blob_data["box"][3],
+                            "annotation_status": True,
+                        }
+                        blob_lvl_annotation_model = BlobLvlAnnotationsModel(**annotated_data_dict)
+                        blob_lvl_annotations_table = BlobLvlAnnotations(
+                            blob_id=blob_lvl_annotation_model.blob_id,
+                            revision_id=blob_lvl_annotation_model.revision_id,
+                            document_id=blob_lvl_annotation_model.document_id,
+                            blob_start_id=blob_lvl_annotation_model.blob_start_id,
+                            blob_end_id=blob_lvl_annotation_model.blob_end_id,
+                            blob_class_id=blob_lvl_annotation_model.blob_class_id,
+                            blob_class_name=blob_lvl_annotation_model.blob_class_name,
+                            blob_text=blob_lvl_annotation_model.blob_text,
+                            blob_box_x1=blob_lvl_annotation_model.blob_box_x1,
+                            blob_box_y1=blob_lvl_annotation_model.blob_box_y1,
+                            blob_box_x2=blob_lvl_annotation_model.blob_box_x2,
+                            blob_box_y2=blob_lvl_annotation_model.blob_box_y2,
+                            annotation_status=blob_lvl_annotation_model.annotation_status,
+                        )
+                        session.add(blob_lvl_annotations_table)
 
-                            # Commit the changes to the database
-                            session.commit()
+                        # Commit the changes to the database
+                        session.commit()
     return error_stat_dict
 
 
-def collect_std_requirements():
-    pass
+def collect_standards_list(session):
+    std_list = get_standard_list()
+    for std in tqdm(std_list, desc="Updating standards list table"):
+        standards_list = StandardsListModel(**std)
+        if not session.query(StandardsList).filter_by(id=standards_list.id).all():
+            std_list_table = StandardsList(
+                id=standards_list.id,
+                name=standards_list.name,
+                version=standards_list.version,
+                family=standards_list.family,
+                href=standards_list.href,
+                topic=standards_list.topic,
+            )
+            session.add(std_list_table)
+
+            # Commit the changes to the database
+            session.commit()
+
+
+def collect_std_requirements(session):
+    std_requirements = get_standard_requirements()
+    for std_requirement in tqdm(std_requirements, desc="Creating RptRequirementsMapping table"):
+        if "standard" in std_requirement:
+            std_requirement["standard"] = std_requirement["standard"]["id"]
+            reporting_req_map_model = RptRequirementsMappingModel(**std_requirement)
+            if not session.query(RptRequirementsMapping).filter_by(id=reporting_req_map_model.id).all():
+                reporting_req_map_table = RptRequirementsMapping(
+                    id=reporting_req_map_model.id,
+                    reporting_requirement_id=reporting_req_map_model.reporting_requirement_id,
+                    standard=reporting_req_map_model.standard,
+                    exists=reporting_req_map_model.exists,
+                    source=reporting_req_map_model.source,
+                    comment=reporting_req_map_model.comment,
+                    type=reporting_req_map_model.type,
+                )
+                session.add(reporting_req_map_table)
+                # Commit the changes to the database
+                session.commit()
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--config",
-        default="/cluster/home/repo/my_llm_experiments/esrs_data_scraping/main.yaml",
+        default="/cluster/home/repo/my_llm_experiments/esrs_data_collection/main.yaml",
         type=str,
         help="Path to config",
     )
     parser.add_argument(
         "--cleanup_blob_annotations",
-        default="False",
         type=bool,
-        help="Path to config",
+        help="Whether the clear blob annotations table",
     )
     return parser.parse_args()
 
@@ -398,7 +440,10 @@ def main():
     )
 
     # create srn_datapoint table containing disclosure requirements detailed data
-    collect_std_requirements(config.pop("srn_data_points_xlsx_file"))
+    # collect_standards_list(session)
+
+    # reporting req mapping information
+    # collect_std_requirements(session)
 
     session.close()
 

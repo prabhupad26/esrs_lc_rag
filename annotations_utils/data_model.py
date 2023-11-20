@@ -126,7 +126,6 @@ class ValuesWithRevisions(Base):
     is_verified = Column(Boolean)
 
     compliance_item = relationship("ComplianceItems")
-    document_instance = relationship("DocumentInstances")
 
 
 class BlobLvlAnnotations(Base):
@@ -148,20 +147,30 @@ class BlobLvlAnnotations(Base):
     annotation_status = Column(Boolean)
 
 
-class RequirementsStdMaster(Base):
-    __table_name__ = "dim_requirements_std_master"
+class StandardsList(Base):
+    __tablename__ = "dim_standard_list"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    std = Column(String)
-    area = Column(String)
-    dr = Column(String)
-    dr_text = Column(String)
-    data_point = Column(String)
+    id = Column(String, primary_key=True)
+    name = Column(String)
+    version = Column(String)
+    family = Column(String)
+    href = Column(String)
+    topic = Column(String)
+
+
+class RptRequirementsMapping(Base):
+    __tablename__ = "map_reporting_requirements_std_list"
+
+    id = Column(String, primary_key=True)
+    reporting_requirement_id = Column(String, ForeignKey("dim_reporting_requirements.id"))
+    standard = Column(String, ForeignKey("dim_standard_list.id"))
+    exists = Column(Boolean)
     source = Column(String)
-    mandatory_flag = Column(Boolean)
-    conditional_flag = Column(Boolean)
-    numerical_flag = Column(Boolean)
-    excluded_materiality = Column(Boolean)
+    comment = Column(String)
+    type = Column(String)
+
+    standards_list = relationship("StandardsList")
+    reporting_requirements = relationship("ReportingRequirements")
 
 
 # Pydantic model for input validation
@@ -262,18 +271,23 @@ class BlobLvlAnnotationsModel(BaseModel):
     annotation_status: bool | None
 
 
-class RequirementsStdMasterModel(BaseModel):
-    # id: int
-    std: str
-    area: str
-    dr: str
-    dr_text: str
-    data_point: str
+class StandardsListModel(BaseModel):
+    id: str
+    name: str
+    version: str
+    family: str
+    href: str | None
+    topic: str | None
+
+
+class RptRequirementsMappingModel(BaseModel):
+    id: str
+    reporting_requirement_id: str
+    standard: str
+    exists: bool
     source: str
-    mandatory_flag: bool
-    conditional_flag: bool
-    numerical_flag: bool
-    excluded_materiality: bool
+    comment: str | None
+    type: str
 
 
 if __name__ == "__main__":
