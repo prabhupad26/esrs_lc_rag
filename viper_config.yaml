@@ -1,0 +1,7 @@
+base_dir: /cluster/home/repo/my_llm_experiments/esrs_data_scraping
+data_base_path: /cluster/home/srn_storage
+model_path: /cluster/home/repo/my_llm_experiments/FRCNN_cbo_275.viper
+pdf2img_out_path: /cluster/home/repo/my_llm_experiments/esrs_data_scraping/pdf2img_images
+db_url: sqlite:////cluster/home/repo/my_llm_experiments/esrs_data_scraping/main.db
+doc_ref_table_name: fact_value_with_revision
+error_statistics_path: /cluster/home/srn_storage_error_stat_dir

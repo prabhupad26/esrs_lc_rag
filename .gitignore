@@ -1,3 +1,18 @@
+# Cache files
 __pycache__/
-
 .nfs*
+
+# Database files
+*.db
+
+
+# Logs
+logs/
+
+
+# Temp folders
+pdf2img_images/
+
+
+# lock files
+*.lock
