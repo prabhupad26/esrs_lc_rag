@@ -20,7 +20,7 @@ def check_if_invalid_pdf(fpath: str):
         return True
 
 
-def download_document(doc_id: str, main_dataset_path: str, timeout=60):
+def download_document(doc_id: str, main_dataset_path: str, timeout=120):
     """
     Retreives a certain document from the SRN Document Database and
     stores it at the provided file path.
@@ -111,7 +111,7 @@ if __name__ == "__main__":
 
     # err_files = list(set(all_stat["err_file_names"]))
 
-    err_json = "/cluster/home/repo/my_llm_experiments/esrs_data_scraping/logs/err_stat.json"
+    err_json = "/cluster/home/repo/my_llm_experiments/esrs_data_collection/srn_data_collector/logs/err_stat.json"
     with open(err_json, "r") as f:
         data_dict = json.load(f)
 

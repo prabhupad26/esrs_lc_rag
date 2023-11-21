@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+from fnmatch import fnmatch
 from typing import Dict, List
 
 import yaml
@@ -8,8 +9,9 @@ from rapidfuzz import fuzz, process
 from sqlalchemy import MetaData, Table, create_engine
 from sqlalchemy.orm import Session
 from tqdm import tqdm
+from viper_parser import process_annotation_idx
 
-from annotations_utils.collect_api_data import (
+from srn_data_collector.annotations_utils.collect_api_data import (
     get_compliance_item_instance,
     get_financial_index,
     get_reporting_requirement_instance,
@@ -19,7 +21,7 @@ from annotations_utils.collect_api_data import (
     get_standard_requirements,
     get_values_with_revisions,
 )
-from annotations_utils.data_model import (
+from srn_data_collector.annotations_utils.data_model import (
     Base,
     BlobLvlAnnotations,
     BlobLvlAnnotationsModel,
@@ -40,8 +42,7 @@ from annotations_utils.data_model import (
     ValuesWithRevisions,
     ValuesWithRevisionsModel,
 )
-from annotations_utils.logger_setup import setup_logger
-from viper_parser import process_annotation_idx
+from srn_data_collector.annotations_utils.logger_setup import setup_logger
 
 
 def collect_companies_data(session):
@@ -152,17 +153,21 @@ def get_storage_path(doc_data_model, base_path):
         return file_name_abs
 
 
-def get_all_files_in_directory(directory):
+def get_all_files_in_directory(directory, wildcard=None):
     all_files = []
     for root, dirs, files in os.walk(directory):
         for file in files:
             file_path = os.path.join(root, file)
+            if wildcard and not fnmatch(file, wildcard):
+                continue  # Skip files that don't match the wildcard
             all_files.append(file_path)
     return all_files
 
 
 def collect_documents_metadata(session, local_storage_path):
-    for file_path in tqdm(get_all_files_in_directory(local_storage_path), desc="Processing pdf files"):
+    for file_path in tqdm(
+        get_all_files_in_directory(local_storage_path, wildcard="*.pdf"), desc="Processing pdf files"
+    ):
         filename_without_extension = os.path.basename(file_path).split(".")
         if filename_without_extension:
             document_id = filename_without_extension[0]
@@ -245,10 +250,11 @@ def get_page_data(page_number: int, json_fpath: str, logger, error_stat_dict=Non
                 error_stat_dict["PageNotFoundError"] = 0
             error_stat_dict["PageNotFoundError"] += 1
     except FileNotFoundError:
-        logger.error("\033[91mDocument is not available\033[0m")
         if "FileNotFoundError" not in error_stat_dict:
             error_stat_dict["FileNotFoundError"] = []
-        error_stat_dict["FileNotFoundError"].append(os.path.splitext(os.path.basename(json_fpath))[0])
+        filename = os.path.splitext(os.path.basename(json_fpath))[0]
+        error_stat_dict["FileNotFoundError"].append(filename)
+        logger.error(f"\033[91mDocument {filename} is in the database but not available\033[0m")
     return page_data_dict, error_stat_dict
 
 
@@ -259,7 +265,29 @@ def fuzzy_match_strings(line: str, tgt_list: List[str], threshold=97):
 def collect_blob_lvl_annotations(session, logger, local_storage_path, error_stat_dict=None, fuzzy_match_thresh=97):
     blob_type_ignore_list = ["header/footer", "headline"]
 
-    annotations = session.query(ValuesWithRevisions).all()
+    get_annotations_query = (
+        session.query(ValuesWithRevisions)
+        .filter(ValuesWithRevisions.value.notin_(["", "\\", "/"]))
+        .filter(
+            ValuesWithRevisions.document_ref.notin_(
+                [
+                    "",
+                    "\\",
+                    "/",
+                    "from the previous data",
+                    "N.a.",
+                    "n.p.",
+                    "n/a",
+                    "data_too_long_to_display",
+                    "N.a.",
+                    "na",
+                    "n.a.",
+                    "NA",
+                ]
+            )
+        )
+    )
+    annotations = get_annotations_query.all()
     for annotation in tqdm(annotations, desc="Extracting annotations from json files"):
         doc_id = annotation.document_id
         document_ref, error_stat_dict = process_annotation_idx(annotation.document_ref, error_stat_dict=error_stat_dict)
@@ -375,12 +403,12 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--config",
-        default="/cluster/home/repo/my_llm_experiments/esrs_data_collection/main.yaml",
+        default="/cluster/home/repo/my_llm_experiments/esrs_data_collection/srn_data_collector/main.yaml",
         type=str,
         help="Path to config",
     )
     parser.add_argument(
-        "--cleanup_blob_annotations",
+        "--cleanup_selected_table",
         type=bool,
         help="Whether the clear blob annotations table",
     )
@@ -397,11 +425,11 @@ def main():
     logger = setup_logger(log_file=config.pop("log_dir"))
 
     # clean up table
-    if args.cleanup_blob_annotations:
+    if args.cleanup_selected_table:
         engine = create_engine(f"sqlite:///{db_file_path}")
         metadata = MetaData()
         metadata.reflect(bind=engine)
-        table_name = "dim_blob_lvl_annotations"
+        table_name = config.pop("table_to_be_cleared")
         table = Table(table_name, metadata, autoload_with=engine)
         table.drop(engine)
         logger.info("Cleanup complete")

@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "esrs-data-collection"
+name = "srn_data_collector"
 version = "0.1.0"
 description = ""
 authors = ["prabhupad26 <prabhupad26@gmail.com>"]
@@ -12,9 +12,15 @@ pandas = "^2.1.3"
 fluidml = "^0.3.4"
 PyMuPDF = "^1.23.6"
 PyYAML = "^6.0.1"
-torch = "^2.1.1"
 SQLAlchemy = "^2.0.23"
 tqdm = "^4.66.1"
+numpy = "^1.24.3"
+pytesseract = "^0.3.10"
+pypdfium2 ="4.13.0"
+opencv-python = "4.7.0.72"
+torch = "2.0.0"
+torchvision = "^0.15.0"
+pydantic = "^2.0.3"
 
 
 [build-system]

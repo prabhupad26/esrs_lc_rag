@@ -1,8 +1,12 @@
+import logging
 import os
 
 import requests
 from tqdm import tqdm
+from urllib3.exceptions import InsecureRequestWarning
 
+requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
+logging.captureWarnings(True)
 srn_api_url = "https://api.sustainabilityreportingnavigator.com/api/"
 
 
@@ -28,7 +32,7 @@ def get_srn_documents():
     return response.json()
 
 
-def download_document(id, fpath, href, timeout=60):
+def download_document(doc_id, fpath, href, timeout=60):
     """
     Retreives a certain document from the SRN Document Database and
     stores it at the provided file path.
@@ -47,7 +51,18 @@ def download_document(id, fpath, href, timeout=60):
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
     }
     try:
-        response = requests.get(href, timeout=timeout, stream=True, headers=headers, verify=False)
+        response = requests.get(
+            f"https://api.sustainabilityreportingnavigator.com/api/documents/{doc_id}/download",
+            timeout=timeout,
+            stream=True,
+            headers=headers,
+            verify=False,
+        )
+        if response.status_code != 200:
+            response = requests.get(href, timeout=timeout, stream=True, headers=headers, verify=False)
+
+        logging.captureWarnings(False)
+
         total_size = int(response.headers.get("content-length", 0))
         with open(fpath, "wb") as file, tqdm(
             desc=fpath, total=total_size, unit="B", unit_scale=True, unit_divisor=1024
@@ -56,12 +71,12 @@ def download_document(id, fpath, href, timeout=60):
                 bar.update(len(data))
                 file.write(data)
     except requests.exceptions.ReadTimeout:
-        print(f"File id : {id} failed with read timeout err , href : {href}")
+        print(f"File id : {doc_id} failed with read timeout err , href : {href}")
         return -1
 
     except Exception as e:
         print(e)
-        print(f"Doc download failed for : {id}, href : {href}")
+        print(f"Doc download failed for : {doc_id}, href : {href}")
         return -1
 
 

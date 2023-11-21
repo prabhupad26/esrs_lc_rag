@@ -1,5 +1,0 @@
-dataset_base_path: /cluster/home/srn_storage
-db_file_path: /cluster/home/repo/my_llm_experiments/esrs_data_collection/main.db
-log_dir: /cluster/home/repo/my_llm_experiments/esrs_data_collection/logs/app.log
-err_stats_json:  /cluster/home/repo/my_llm_experiments/esrs_data_collection/logs/err_stat.json
-fuzzy_match_thresh: 70

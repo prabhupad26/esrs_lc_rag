@@ -33,7 +33,7 @@ from vipercore.refinement.order_refinement import sort_predictions
 from vipercore.refinement.rule_refinement import rule_refinement
 from vipercore.refinement.text_refinement import text_refinement
 
-from annotations_utils.fluidml_helper import (
+from srn_data_collector.annotations_utils.fluidml_helper import (
     TaskResource,
     get_balanced_devices,
     get_raw_pdf_fps,
@@ -75,25 +75,27 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def process_annotation_idx(doc_ref_raw: str, error_stat_dict=None) -> List[int] | None:
+def process_annotation_idx(doc_ref_raw: str, error_stat_dict=None) -> tuple[List[int], dict] | None:
     doc_ref_idx = []
+    delimiters = [",", "and", "/", ";", "&", "+", "iVm", "#"]
+
     try:
-        if "," in doc_ref_raw:
-            [doc_ref_idx.append(int(i.strip())) for i in doc_ref_raw.split(",") if i]
-        elif "and" in doc_ref_raw:
-            [doc_ref_idx.append(int(i.strip())) for i in doc_ref_raw.split("and") if i]
-        elif "-" in doc_ref_raw:
-            if len(doc_ref_raw.split("-")) == 2:
+        for delimiter in delimiters:
+            if delimiter in doc_ref_raw:
+                doc_ref_idx.extend([int(i.strip()) for i in doc_ref_raw.split(delimiter) if i])
+                break
+        else:
+            if "-" in doc_ref_raw and len(doc_ref_raw.split("-")) == 2:
                 start, end = map(int, doc_ref_raw.split("-"))
-                [doc_ref_idx.append(i) for i in range(start, end + 1)]
-        elif re.match(r"^[+-]?\d+$", doc_ref_raw):
-            doc_ref_idx.append(int(doc_ref_raw.strip()))
+                doc_ref_idx.extend(range(start, end + 1))
+            elif re.match(r"^[+-]?\d+$", doc_ref_raw):
+                doc_ref_idx.append(int(doc_ref_raw.strip()))
     except ValueError:
         if error_stat_dict:
-            if "annotation_pattern_match_ValueError" not in error_stat_dict:
-                error_stat_dict["annotation_pattern_match_ValueError"] = 0
+            error_stat_dict.setdefault("annotation_pattern_match_ValueError", 0)
             error_stat_dict["annotation_pattern_match_ValueError"] += 1
         core_logger.error(f"Pattern {doc_ref_raw} failed to match, handle this!!!!")
+
     return doc_ref_idx, error_stat_dict
 
 
@@ -285,7 +287,6 @@ def main():
     # get balanced devices
     devices = get_balanced_devices(count=args.num_workers, cuda_ids=args.cuda_ids)
     resources = [TaskResource(device=devices[i]) for i in range(args.num_workers)]
-    # results_store = ParserResultsStore()
 
     # prerequisites for parsing
     db_url = config.pop("db_url")
