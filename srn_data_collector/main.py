@@ -8,6 +8,7 @@ import yaml
 from rapidfuzz import fuzz, process
 from sqlalchemy import MetaData, Table, create_engine
 from sqlalchemy.orm import Session
+from stqdm import stqdm
 from tqdm import tqdm
 from viper_parser import process_annotation_idx
 
@@ -41,6 +42,10 @@ from srn_data_collector.annotations_utils.data_model import (
     StandardsListModel,
     ValuesWithRevisions,
     ValuesWithRevisionsModel,
+)
+from srn_data_collector.annotations_utils.llm_utils_helper import (
+    estimate_api_cost,
+    predict_samples_parallel,
 )
 from srn_data_collector.annotations_utils.logger_setup import setup_logger
 
@@ -262,8 +267,24 @@ def fuzzy_match_strings(line: str, tgt_list: List[str], threshold=97):
     return process.extractOne(line, tgt_list, scorer=fuzz.WRatio, score_cutoff=threshold)
 
 
-def collect_blob_lvl_annotations(session, logger, local_storage_path, error_stat_dict=None, fuzzy_match_thresh=97):
+def gpt_match_strings(samples_list, reponse_storage_path):
+    with stqdm(desc="**Processing requirement**", total=len(samples_list), backend=True, frontend=True) as pbar:
+        results_list = predict_samples_parallel(samples_list, pbar, storage_path=reponse_storage_path)
+    return results_list
+
+
+def collect_blob_lvl_annotations(
+    session,
+    logger,
+    local_storage_path,
+    fuzzy_match_thresh,
+    error_stat_dict=None,
+    estimate_cost=False,
+    gpt_reponse_file_path=None,
+):
     blob_type_ignore_list = ["header/footer", "headline"]
+    cost_est_dict = {"api_len": 0, "api_cost": 0}
+    sample_list = []
 
     get_annotations_query = (
         session.query(ValuesWithRevisions)
@@ -288,75 +309,129 @@ def collect_blob_lvl_annotations(session, logger, local_storage_path, error_stat
         )
     )
     annotations = get_annotations_query.all()
+    existing_annotations = [i.revision_id for i in session.query(BlobLvlAnnotations).all()]
     for annotation in tqdm(annotations, desc="Extracting annotations from json files"):
-        doc_id = annotation.document_id
-        document_ref, error_stat_dict = process_annotation_idx(annotation.document_ref, error_stat_dict=error_stat_dict)
-
-        if document_ref and annotation.value:
-            company_id = annotation.company_id
-
-            # get document metadata
-            docs_meta_data = session.query(DocumentInstances).filter_by(id=doc_id).all()
-            if not docs_meta_data:
-                logger.error(f"Data for {doc_id} not available!!")
-                continue
-            docs_meta_data = docs_meta_data[0]
-
-            # get page parsed json data
-            parsed_data_file_path = os.path.join(
-                local_storage_path, company_id, docs_meta_data.year, docs_meta_data.type, f"{doc_id}.json"
+        if annotation.id not in existing_annotations:
+            doc_id = annotation.document_id
+            document_ref, error_stat_dict = process_annotation_idx(
+                annotation.document_ref, error_stat_dict=error_stat_dict
             )
 
-            # go page by page in the document
-            for doc_page_num in document_ref:
-                blobs, error_stat_dict = get_page_data(doc_page_num, parsed_data_file_path, logger, error_stat_dict)
-                if blobs:
-                    # go blob by blob within the page
-                    blobs_value_list = [
-                        blob["text"].lower() for blob in blobs if blob["class_name"] not in blob_type_ignore_list
-                    ]
-                    fuzzy_matched = fuzzy_match_strings(
-                        annotation.value.lower(), blobs_value_list, threshold=fuzzy_match_thresh
-                    )
-                    if fuzzy_matched:
-                        _, _, fuzzily_matched_idx = fuzzy_matched
-                        blob_data = blobs[fuzzily_matched_idx]
-                        annotated_data_dict = {
-                            "blob_id": fuzzily_matched_idx,
-                            "revision_id": annotation.id,
-                            "document_id": annotation.document_id,
-                            "blob_start_id": None,
-                            "blob_end_id": None,
-                            "blob_class_id": blob_data["class_id"],
-                            "blob_class_name": blob_data["class_name"],
-                            "blob_text": blob_data["text"],
-                            "blob_box_x1": blob_data["box"][0],
-                            "blob_box_y1": blob_data["box"][1],
-                            "blob_box_x2": blob_data["box"][2],
-                            "blob_box_y2": blob_data["box"][3],
-                            "annotation_status": True,
-                        }
-                        blob_lvl_annotation_model = BlobLvlAnnotationsModel(**annotated_data_dict)
-                        blob_lvl_annotations_table = BlobLvlAnnotations(
-                            blob_id=blob_lvl_annotation_model.blob_id,
-                            revision_id=blob_lvl_annotation_model.revision_id,
-                            document_id=blob_lvl_annotation_model.document_id,
-                            blob_start_id=blob_lvl_annotation_model.blob_start_id,
-                            blob_end_id=blob_lvl_annotation_model.blob_end_id,
-                            blob_class_id=blob_lvl_annotation_model.blob_class_id,
-                            blob_class_name=blob_lvl_annotation_model.blob_class_name,
-                            blob_text=blob_lvl_annotation_model.blob_text,
-                            blob_box_x1=blob_lvl_annotation_model.blob_box_x1,
-                            blob_box_y1=blob_lvl_annotation_model.blob_box_y1,
-                            blob_box_x2=blob_lvl_annotation_model.blob_box_x2,
-                            blob_box_y2=blob_lvl_annotation_model.blob_box_y2,
-                            annotation_status=blob_lvl_annotation_model.annotation_status,
-                        )
-                        session.add(blob_lvl_annotations_table)
+            if document_ref and annotation.value:
+                company_id = annotation.company_id
 
-                        # Commit the changes to the database
-                        session.commit()
-    return error_stat_dict
+                # get document metadata
+                docs_meta_data = session.query(DocumentInstances).filter_by(id=doc_id).all()
+                if not docs_meta_data:
+                    logger.error(f"Data for {doc_id} not available!!")
+                    continue
+                docs_meta_data = docs_meta_data[0]
+
+                # get page parsed json data
+                parsed_data_file_path = os.path.join(
+                    local_storage_path, company_id, docs_meta_data.year, docs_meta_data.type, f"{doc_id}.json"
+                )
+
+                # go page by page in the document
+                for doc_page_num in document_ref:
+                    blobs, error_stat_dict = get_page_data(doc_page_num, parsed_data_file_path, logger, error_stat_dict)
+                    if blobs:
+                        # for fuzzy matching
+                        if fuzzy_match_thresh:
+                            blobs_value_list = [
+                                blob["text"].lower()
+                                for blob in blobs
+                                if blob["class_name"] not in blob_type_ignore_list
+                            ]
+                            matched_blob = fuzzy_match_strings(
+                                annotation.value.lower(), blobs_value_list, threshold=fuzzy_match_thresh
+                            )
+                            if matched_blob:
+                                update_blob_data(**matched_blob, session=session, error_stat_dict=error_stat_dict)
+
+                        # for gpt api matching
+                        else:
+                            compliance_item_id = (
+                                session.query(ComplianceItems).filter_by(id=annotation.compliance_item_id).all()
+                            )
+                            if estimate_cost:
+                                api_len, api_cost = estimate_api_cost(
+                                    compliance_item_id[0].name, annotation.value.lower(), blobs, max_tokens=256
+                                )
+                                cost_est_dict["api_len"] += api_len
+                                cost_est_dict["api_cost"] += api_cost
+                            else:
+                                # create the sample list for gpt api matchin
+                                sample_list.append(
+                                    {
+                                        "compliance_item": compliance_item_id[0].name,
+                                        "annotation": annotation,
+                                        "blobs": blobs,
+                                    }
+                                )
+    # process the sample list for gpt api matching
+    if not estimate_cost and not fuzzy_match_thresh:
+        matched_blob_list: List[Dict] = gpt_match_strings(sample_list, gpt_reponse_file_path)
+
+        for matched_blob in tqdm(matched_blob_list, desc="updating database with matched blobs"):
+            if matched_blob:
+                update_blob_data(**matched_blob, session=session, error_stat_dict=error_stat_dict)
+
+    return error_stat_dict, cost_est_dict
+
+
+def update_blob_data(annotation, blobs, matched_blob, session, error_stat_dict):
+    if matched_blob:
+        for blob_idx in matched_blob:
+            try:
+                blob_idx = int(blob_idx)
+                if blob_idx < len(blobs):
+                    blob_data = blobs[blob_idx]
+                    annotated_data_dict = {
+                        "blob_id": blob_idx,
+                        "revision_id": annotation.id,
+                        "document_id": annotation.document_id,
+                        "blob_start_id": None,
+                        "blob_end_id": None,
+                        "blob_class_id": blob_data["class_id"],
+                        "blob_class_name": blob_data["class_name"],
+                        "blob_text": blob_data["text"],
+                        "blob_box_x1": blob_data["box"][0],
+                        "blob_box_y1": blob_data["box"][1],
+                        "blob_box_x2": blob_data["box"][2],
+                        "blob_box_y2": blob_data["box"][3],
+                        "annotation_status": True,
+                    }
+                    blob_lvl_annotation_model = BlobLvlAnnotationsModel(**annotated_data_dict)
+                    blob_lvl_annotations_table = BlobLvlAnnotations(
+                        blob_id=blob_lvl_annotation_model.blob_id,
+                        revision_id=blob_lvl_annotation_model.revision_id,
+                        document_id=blob_lvl_annotation_model.document_id,
+                        blob_start_id=blob_lvl_annotation_model.blob_start_id,
+                        blob_end_id=blob_lvl_annotation_model.blob_end_id,
+                        blob_class_id=blob_lvl_annotation_model.blob_class_id,
+                        blob_class_name=blob_lvl_annotation_model.blob_class_name,
+                        blob_text=blob_lvl_annotation_model.blob_text,
+                        blob_box_x1=blob_lvl_annotation_model.blob_box_x1,
+                        blob_box_y1=blob_lvl_annotation_model.blob_box_y1,
+                        blob_box_x2=blob_lvl_annotation_model.blob_box_x2,
+                        blob_box_y2=blob_lvl_annotation_model.blob_box_y2,
+                        annotation_status=blob_lvl_annotation_model.annotation_status,
+                    )
+                    session.add(blob_lvl_annotations_table)
+                    # Commit the changes to the database
+                    session.commit()
+                else:
+                    print(f"{blob_idx} index is out of range")
+            except TypeError:
+                if "DBErrorTypeError" not in error_stat_dict:
+                    error_stat_dict["DBErrorTypeError"] = 0
+                error_stat_dict["DBErrorTypeError"] += 1
+            except ValueError:
+                if "DBErrorValueError" not in error_stat_dict:
+                    error_stat_dict["DBErrorValueError"] = 0
+                error_stat_dict["DBErrorValueError"] += 1
+        return error_stat_dict
 
 
 def collect_standards_list(session):
@@ -421,6 +496,9 @@ def main():
 
     dataset_base_path = config.pop("dataset_base_path")
     db_file_path = config.pop("db_file_path")
+    gpt_reponse_file_path = config.pop("gpt_reponse_file_path")
+    if not os.path.exists(gpt_reponse_file_path):
+        os.mkdir(gpt_reponse_file_path)
 
     logger = setup_logger(log_file=config.pop("log_dir"))
 
@@ -459,12 +537,14 @@ def main():
     # collect_reporting_item_data(session)
 
     # collect blob level annotations from json files
-    error_stat_dict = collect_blob_lvl_annotations(
+    error_stat_dict, cost_est_dict = collect_blob_lvl_annotations(
         session,
         logger,
         local_storage_path=dataset_base_path,
         error_stat_dict={},
-        fuzzy_match_thresh=config.pop("fuzzy_match_thresh"),
+        fuzzy_match_thresh=config.pop("fuzzy_match_thresh", None),
+        estimate_cost=False,
+        gpt_reponse_file_path=gpt_reponse_file_path,
     )
 
     # create srn_datapoint table containing disclosure requirements detailed data
@@ -477,6 +557,9 @@ def main():
 
     with open(config.pop("err_stats_json"), "w") as f:
         json.dump(error_stat_dict, f, indent=4)
+
+    with open(config.pop("api_est_json"), "w") as f:
+        json.dump(cost_est_dict, f, indent=4)
 
 
 if __name__ == "__main__":

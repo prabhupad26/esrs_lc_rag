@@ -2,6 +2,8 @@ dataset_base_path: /cluster/home/srn_storage
 db_file_path: /cluster/home/repo/my_llm_experiments/esrs_data_collection/srn_data_collector/main.db
 log_dir: /cluster/home/repo/my_llm_experiments/esrs_data_collection/srn_data_collector/logs/app.log
 err_stats_json:  /cluster/home/repo/my_llm_experiments/esrs_data_collection/srn_data_collector/logs/err_stat.json
+api_est_json:  /cluster/home/repo/my_llm_experiments/esrs_data_collection/srn_data_collector/logs/api_est_json.json
 fuzzy_match_thresh: 70
 
 table_to_be_cleared: dim_blob_lvl_annotations
+gpt_reponse_file_path: /cluster/home/srn_storage/gpt_reponse_file_path
