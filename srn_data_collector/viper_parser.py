@@ -20,7 +20,6 @@ from typing import Dict, List
 import fitz
 import yaml
 from fluidml import Flow, Task, TaskSpec, configure_logging
-from pdfminer.pdfparser import PDFSyntaxError
 from sqlalchemy import MetaData, Table, and_, create_engine
 from tqdm import tqdm
 from vipercore.data.data_classes import ParsedDocument
@@ -139,6 +138,66 @@ def get_annotated_page_indicator(
     return indicators_list, error_stat_dict
 
 
+def get_page_dict(
+    pdf_path: str,
+    img_path: str,
+    model_path: str,
+    annotated_pages_ind_list: List[int] = [],
+    device: str = "cuda",
+    use_pdf2image=True,
+):
+    error_statistics = {}
+    model = Model(model_path, device=device)
+
+    # Set up predictor
+    predictor = Predictor(model, device=device)
+    parsed_document = ParsedDocument()
+
+    try:
+        # Convert raw pdf to images
+        imgs: List[str] = convert_pdf(pdf_path, img_path, use_pdf2image=use_pdf2image)
+
+        annotated_pages_ind_list = [True for _ in range(len(imgs))]
+
+        parsed_document = predictor(parsed_document, imgs)
+        # ocr_refinement
+        parsed_document = ocr_refinement(parsed_document, imgs, annotated_pages_ind_list=annotated_pages_ind_list)
+
+        # rule refinement
+        parsed_document = rule_refinement(parsed_document)
+
+        # text refinement
+        parsed_document = text_refinement(pdf_path, parsed_document)
+
+        # sort refinement
+        parsed_document = sort_predictions(parsed_document)
+
+        # save json
+        task_save_json_file(pdf_path, parsed_document)
+
+        # cleanup
+        remove_processed_pdf_images(imgs)
+
+    except torch.cuda.CudaError as e:
+        # Handle CUDA-related errors, including OutOfMemoryError
+        if "CUDA_Error" not in error_statistics:
+            error_statistics["CUDA_Error"] = 0
+        error_statistics["CUDA_Error"] += 1
+        core_logger.error(f"CUDA Error: {e}")
+
+    except fitz.FileDataError as e:
+        if "FileDataError" not in error_statistics:
+            error_statistics["FileDataError"] = 0
+        error_statistics["FileDataError"] += 1
+        core_logger.error(f"FileDataError for file: {pdf_path}")
+
+    except IndexError as ie:
+        if "IndexError" not in error_statistics:
+            error_statistics["IndexError"] = 0
+        error_statistics["IndexError"] += 1
+        core_logger.error(f"IndexError for file: {pdf_path}")
+
+
 def task_process_pdfs(
     pdf_path_list: List[str],
     img_path,
@@ -200,12 +259,6 @@ def task_process_pdfs(
                 error_statistics["CUDA_Error"] = 0
             error_statistics["CUDA_Error"] += 1
             core_logger.error(f"CUDA Error: {e}")
-
-        except PDFSyntaxError as pdfse:
-            if "PDFSyntaxError" not in error_statistics:
-                error_statistics["PDFSyntaxError"] = 0
-            error_statistics["PDFSyntaxError"] += 1
-            core_logger.error(f"PDF syntax errors: {pdfse}")
 
         except fitz.FileDataError as e:
             if "FileDataError" not in error_statistics:

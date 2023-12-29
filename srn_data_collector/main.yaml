@@ -3,7 +3,24 @@ db_file_path: /cluster/home/repo/my_llm_experiments/esrs_data_collection/srn_dat
 log_dir: /cluster/home/repo/my_llm_experiments/esrs_data_collection/srn_data_collector/logs/app.log
 err_stats_json:  /cluster/home/repo/my_llm_experiments/esrs_data_collection/srn_data_collector/logs/err_stat.json
 api_est_json:  /cluster/home/repo/my_llm_experiments/esrs_data_collection/srn_data_collector/logs/api_est_json.json
+convert_pdf_est_json:  /cluster/home/repo/my_llm_experiments/esrs_data_collection/srn_data_collector/logs/convert_pdf_est_json.json
 fuzzy_match_thresh: 70
 
+# remove all rows from table
 table_to_be_cleared: dim_blob_lvl_annotations
+
+# save path for gpt3.5 reponse
 gpt_reponse_file_path: /cluster/home/srn_storage/gpt_reponse_file_path
+
+
+# Translation task
+model_name:  "llama2-13b" # "gpt-3.5-turbo"
+max_tokens: 2048
+estimate_conversion_cost: False
+docs_limit: 50
+
+
+# ESRS Requirements data
+esrs_drafts_data: /cluster/home/srn_storage/esrs_draft_data
+pdf2img_out_path: /cluster/home/repo/my_llm_experiments/esrs_data_collection/srn_data_collector/pdf2img_images
+model_path: /cluster/home/repo/my_llm_experiments/FRCNN_cbo_275.viper

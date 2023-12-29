@@ -4,13 +4,13 @@ import os
 from fnmatch import fnmatch
 from typing import Dict, List
 
+import requests
 import yaml
 from rapidfuzz import fuzz, process
-from sqlalchemy import MetaData, Table, create_engine
+from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from stqdm import stqdm
 from tqdm import tqdm
-from viper_parser import process_annotation_idx
 
 from srn_data_collector.annotations_utils.collect_api_data import (
     get_compliance_item_instance,
@@ -45,9 +45,12 @@ from srn_data_collector.annotations_utils.data_model import (
 )
 from srn_data_collector.annotations_utils.llm_utils_helper import (
     estimate_api_cost,
+    json_translate_estimate_gpt,
     predict_samples_parallel,
+    translate_json_parallel,
 )
 from srn_data_collector.annotations_utils.logger_setup import setup_logger
+from srn_data_collector.viper_parser import get_page_dict, process_annotation_idx
 
 
 def collect_companies_data(session):
@@ -474,6 +477,100 @@ def collect_std_requirements(session):
                 session.commit()
 
 
+def run_blob_conversion(session, model_name, local_storage_path, estimate_cost: bool = False, limit_docs: int = 10):
+    """
+    This function can estimate the cost for translation task and run the translation
+    """
+    estimates_json = {"api_len": 0, "api_cost": 0}
+    json_files_list = get_all_files_in_directory(local_storage_path, wildcard="*.json")
+    # existing_docs_list = [doc.id for doc in session.query(DocumentInstances)]
+    annotated_docs_list = set([doc.document_id for doc in session.query(BlobLvlAnnotations)])
+    json_files_list = [
+        json_file
+        for json_file in json_files_list
+        if os.path.splitext(os.path.basename(json_file))[0] in annotated_docs_list
+    ]
+
+    if limit_docs:
+        json_files_list = json_files_list[:limit_docs]
+    # json_translate_estimate
+    for json_file in tqdm(json_files_list, desc="Processing jsons for translation task"):
+        if not os.path.exists(f"{os.path.splitext(json_file)[0]}_de.json"):
+            with open(json_file, "r") as f:
+                doc_dict = json.load(f)
+
+            blob_text_list = []
+            for _, page_blobs in tqdm(
+                doc_dict.items(), desc=f"Translating blobs for : {os.path.splitext(os.path.basename(json_file))[0]}"
+            ):
+                for blob in page_blobs:
+                    if estimate_cost:
+                        api_len, api_cost = json_translate_estimate_gpt(blob["text"], max_tokens=2048)
+                        estimates_json["api_len"] += api_len
+                        estimates_json["api_cost"] += api_cost
+                    else:
+                        blob_text_list.append(blob)
+
+            if not estimate_cost:
+                with stqdm(desc="**Processing blobs**", total=len(blob_text_list), backend=True, frontend=True) as pbar:
+                    translate_json_parallel(model_name, blob_text_list, pbar=pbar, max_tokens=2048)
+
+            with open(f"{os.path.splitext(json_file)[0]}_de.json", "w") as f:
+                json.dump(doc_dict, f, indent=2)
+    return estimates_json
+
+
+def run_compliance_items_translation():
+    pass
+
+
+def process_esrs_data(session, storage_path: str, model_path: str, pdf2img_out_path: str):
+    esrs_standards = session.query(StandardsList).filter_by(family="esrs").all()
+    for esrs_standard in tqdm(esrs_standards, desc="Downloading and parsing esrs drafts"):
+        destination_folder = os.path.join(storage_path, esrs_standard.id)
+        if not os.path.exists(destination_folder):
+            os.makedirs(destination_folder)
+        response = requests.get(esrs_standard.href)
+
+        if response.status_code == 200:
+            destination_path = os.path.join(destination_folder, f"{esrs_standard.id}.pdf")
+
+            with open(destination_path, "wb") as file:
+                file.write(response.content)
+
+            get_page_dict(pdf_path=destination_path, model_path=model_path, img_path=pdf2img_out_path)
+
+
+def curate_blob_lvl_annotations(session, dataset_path):
+    """
+    This is for curating the page numbers for document_ref table
+    """
+    # update document_ref
+    blob_lvl_annotations = session.query(BlobLvlAnnotations).all()
+    for blob_lvl_annotation in tqdm(blob_lvl_annotations, desc="curating revisions"):
+        doc = session.query(DocumentInstances).filter_by(id=blob_lvl_annotation.document_id).all()
+        fvwr = session.query(ValuesWithRevisions).filter_by(id=blob_lvl_annotation.revision_id).all()[0]
+        doc_refs = process_annotation_idx(fvwr.document_ref)
+        if doc_refs:
+            doc_refs, _ = doc_refs
+            assert len(doc) == 1, f"Duplicate doc found for {blob_lvl_annotation.document_id}"
+            json_path = os.path.join(dataset_path, f"{doc[0].company_id}/{doc[0].year}/{doc[0].type}/{doc[0].id}.json")
+            if os.path.exists(json_path):
+                with open(json_path, "r") as f:
+                    json_data = json.load(f)
+                for doc_ref in doc_refs:
+                    try:
+                        if (
+                            blob_lvl_annotation.blob_text
+                            == json_data[str(doc_ref)][blob_lvl_annotation.blob_id]["text"]
+                        ):
+                            blob_lvl_annotation.document_ref = str(doc_ref)
+                            session.commit()
+                            break
+                    except IndexError:
+                        print(f"{blob_lvl_annotation.blob_id} is not present in page {doc_ref}")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -503,19 +600,20 @@ def main():
     logger = setup_logger(log_file=config.pop("log_dir"))
 
     # clean up table
-    if args.cleanup_selected_table:
-        engine = create_engine(f"sqlite:///{db_file_path}")
-        metadata = MetaData()
-        metadata.reflect(bind=engine)
-        table_name = config.pop("table_to_be_cleared")
-        table = Table(table_name, metadata, autoload_with=engine)
-        table.drop(engine)
-        logger.info("Cleanup complete")
+    # if args.cleanup_selected_table:
+    #     engine = create_engine(f"sqlite:///{db_file_path}")
+    #     metadata = MetaData()
+    #     metadata.reflect(bind=engine)
+    #     table_name = config.pop("table_to_be_cleared")
+    #     table = Table(table_name, metadata, autoload_with=engine)
+    #     table.drop(engine)
+    #     logger.info("Cleanup complete")
 
     # Create SQLite database
     engine = create_engine(f"sqlite:///{db_file_path}")
 
     # Build all the tables
+    metadata = Base.metadata
     Base.metadata.create_all(bind=engine)
 
     # Creates session
@@ -537,14 +635,23 @@ def main():
     # collect_reporting_item_data(session)
 
     # collect blob level annotations from json files
-    error_stat_dict, cost_est_dict = collect_blob_lvl_annotations(
+    # error_stat_dict, cost_est_dict = collect_blob_lvl_annotations(
+    #     session,
+    #     logger,
+    #     local_storage_path=dataset_base_path,
+    #     error_stat_dict={},
+    #     fuzzy_match_thresh=config.pop("fuzzy_match_thresh", None),
+    #     estimate_cost=False,
+    #     gpt_reponse_file_path=gpt_reponse_file_path,
+    # )
+
+    # Calculate gpt3.5 cost for reports translation task/llama2 data translation
+    convert_pdf_est_json = run_blob_conversion(
         session,
-        logger,
+        config.pop("model_name"),
+        estimate_cost=config.pop("estimate_conversion_cost"),
         local_storage_path=dataset_base_path,
-        error_stat_dict={},
-        fuzzy_match_thresh=config.pop("fuzzy_match_thresh", None),
-        estimate_cost=False,
-        gpt_reponse_file_path=gpt_reponse_file_path,
+        limit_docs=config.pop("docs_limit"),
     )
 
     # create srn_datapoint table containing disclosure requirements detailed data
@@ -553,13 +660,25 @@ def main():
     # reporting req mapping information
     # collect_std_requirements(session)
 
+    # download and convert esrs_data esrs nov 2022 draft
+    # process_esrs_data(session,
+    #                   storage_path=config.pop('esrs_drafts_data'),
+    #                   model_path=config.pop('model_path'),
+    #                   pdf2img_out_path=config.pop('pdf2img_out_path'))
+
+    # curate_database
+    # curate_blob_lvl_annotations(session, dataset_base_path)
+
     session.close()
 
-    with open(config.pop("err_stats_json"), "w") as f:
-        json.dump(error_stat_dict, f, indent=4)
+    # with open(config.pop("err_stats_json"), "w") as f:
+    #     json.dump(error_stat_dict, f, indent=4)
 
-    with open(config.pop("api_est_json"), "w") as f:
-        json.dump(cost_est_dict, f, indent=4)
+    # with open(config.pop("api_est_json"), "w") as f:
+    #     json.dump(cost_est_dict, f, indent=4)
+
+    with open(config.pop("convert_pdf_est_json"), "w") as f:
+        json.dump(convert_pdf_est_json, f, indent=4)
 
 
 if __name__ == "__main__":

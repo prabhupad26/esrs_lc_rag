@@ -1,4 +1,3 @@
-from annotations_utils.collect_api_data import get_financial_index, get_srn_companies
 from pydantic import BaseModel
 from sqlalchemy import (
     Boolean,
@@ -13,6 +12,11 @@ from sqlalchemy import (
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import Session, relationship
 from tqdm import tqdm
+
+from srn_data_collector.annotations_utils.collect_api_data import (
+    get_financial_index,
+    get_srn_companies,
+)
 
 Base = declarative_base()
 
@@ -144,6 +148,7 @@ class BlobLvlAnnotations(Base):
     blob_box_x2 = Column(Float)
     blob_box_y2 = Column(Float)
     annotation_status = Column(Boolean)
+    document_ref = Column(String)
 
 
 class StandardsList(Base):
