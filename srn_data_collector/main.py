@@ -1,13 +1,18 @@
 import argparse
 import json
 import os
+import re
+from collections import defaultdict
 from fnmatch import fnmatch
 from typing import Dict, List
 
+import pandas as pd
 import requests
 import yaml
+from docx import Document
+from easynmt import EasyNMT
 from rapidfuzz import fuzz, process
-from sqlalchemy import create_engine
+from sqlalchemy import MetaData, Table, create_engine, select
 from sqlalchemy.orm import Session
 from stqdm import stqdm
 from tqdm import tqdm
@@ -32,6 +37,8 @@ from srn_data_collector.annotations_utils.data_model import (
     ComplianceItemsModel,
     DocumentInstances,
     DocumentInstancesModel,
+    EsrsReqMapping,
+    EsrsReqMappingModel,
     Indices,
     IndicesModel,
     ReportingRequirements,
@@ -267,7 +274,7 @@ def get_page_data(page_number: int, json_fpath: str, logger, error_stat_dict=Non
 
 
 def fuzzy_match_strings(line: str, tgt_list: List[str], threshold=97):
-    return process.extractOne(line, tgt_list, scorer=fuzz.WRatio, score_cutoff=threshold)
+    return process.extractOne(line, tgt_list, scorer=fuzz.QRatio, score_cutoff=threshold)
 
 
 def gpt_match_strings(samples_list, reponse_storage_path):
@@ -520,8 +527,134 @@ def run_blob_conversion(session, model_name, local_storage_path, estimate_cost: 
     return estimates_json
 
 
+def run_blob_conversion_easy_nmt(session, local_storage_path, limit_docs: str = 50):
+    """
+    This function translates the data using easy nmt
+    """
+    model = EasyNMT("opus-mt")
+    estimates_json = {"api_len": 0, "api_cost": 0}
+    json_files_list = get_all_files_in_directory(local_storage_path, wildcard="*.json")
+    # existing_docs_list = [doc.id for doc in session.query(DocumentInstances)]
+    annotated_docs_list = set([doc.document_id for doc in session.query(BlobLvlAnnotations)])
+    json_files_list = [
+        json_file
+        for json_file in json_files_list
+        if os.path.splitext(os.path.basename(json_file))[0] in annotated_docs_list
+    ]
+
+    if limit_docs:
+        json_files_list = json_files_list[:limit_docs]
+    # json_translate_estimate
+    for json_file in tqdm(json_files_list, desc="Processing jsons for translation task"):
+        if not os.path.exists(f"{os.path.splitext(json_file)[0]}esy_nmt_de.json"):
+            with open(json_file, "r") as f:
+                doc_dict = json.load(f)
+
+            for _, page_blobs in tqdm(
+                doc_dict.items(), desc=f"Translating blobs for : {os.path.splitext(os.path.basename(json_file))[0]}"
+            ):
+                for blob in page_blobs:
+                    blob["text"] = model.translate(blob["text"], target_lang="de")
+
+            with open(f"{os.path.splitext(json_file)[0]}esy_nmt_de.json", "w") as f:
+                json.dump(doc_dict, f, indent=2)
+    return estimates_json
+
+
+def run_annotated_blob_conversion(session):
+    pass
+
+
 def run_compliance_items_translation():
     pass
+
+
+def dump_esrs_data_todb(session, raw_data_file: str, esrs_text_csv: str):
+    all_reqs = defaultdict(dict)
+    with open(raw_data_file, "r") as f:
+        raw_data_dict = json.load(f)
+    for esrs_cat, esrs_items in tqdm(raw_data_dict.items(), desc="Processing ESRS"):
+        esrs_cat = esrs_cat.strip("ESRS").strip()
+        for _, esrs_sub_items in esrs_items.items():
+            objective_requirements = esrs_sub_items.pop("objective_requirements", None)
+            application_requirements = esrs_sub_items.pop("application_requirements", None)
+            if objective_requirements:
+                for para_id, objective_requirement in objective_requirements.items():
+                    all_reqs[esrs_cat][para_id] = objective_requirement["text"]
+                    if "sub_req" in objective_requirement:
+                        subreqs = objective_requirement.pop("sub_req", None)
+                        if subreqs:
+                            for sname, subreq in subreqs.items():
+                                all_reqs[esrs_cat][f"{para_id} {sname}"] = subreq["text"]
+                                if "sub_sub_req" in subreq:
+                                    sub_sub_reqs = subreq.pop("sub_sub_req", None)
+                                    if sub_sub_reqs:
+                                        for ssname, sub_sub_req in sub_sub_reqs.items():
+                                            ssname = f"({ssname.lower()})"
+                                            all_reqs[esrs_cat][f"{para_id} {sname} {ssname}"] = sub_sub_req["text"]
+
+            if application_requirements:
+                for para_id, application_requirement in application_requirements.items():
+                    para_id = para_id.replace(" ", "")
+                    all_reqs[esrs_cat][para_id] = application_requirement["text"]
+                    if "sub_req" in application_requirement:
+                        subreqs = application_requirement.pop("sub_req", None)
+                        if subreqs:
+                            for sname, subreq in subreqs.items():
+                                all_reqs[esrs_cat][f"{para_id} {sname}"] = subreq["text"]
+                                if "sub_sub_req" in subreq:
+                                    sub_sub_reqs = subreq.pop("sub_sub_req", None)
+                                    if sub_sub_reqs:
+                                        for ssname, sub_sub_req in sub_sub_reqs.items():
+                                            ssname = f"({ssname.lower()})"
+                                            all_reqs[esrs_cat][f"{para_id} {sname} {ssname}"] = sub_sub_req["text"]
+
+    query = select(RptRequirementsMapping, StandardsList).join(
+        RptRequirementsMapping, RptRequirementsMapping.standard == StandardsList.id
+    )
+
+    mapping_data = session.execute(query).all()
+
+    for row in tqdm(mapping_data, desc="Processing all sources"):
+        text = ""
+        section_name = row[0].source
+        std_mapping_id = row[0].standard
+        esrs_family = row[1].family
+        esrs_category_id = row[1].name.strip("ESRS").strip()
+        all_req_keys = all_reqs[esrs_category_id].keys()
+        if row[1].family == "esrs_v2":
+            section_names = section_name.replace("+", ";").replace(",", ";").split(";")
+            for section in section_names:
+                section_clean = section.strip().strip(esrs_category_id).strip(".").strip()
+
+                section_clean = "55 (c)" if section_clean == "55(c)" else section_clean
+
+                matched_sec_name, _, _ = fuzzy_match_strings(section_clean, all_req_keys, threshold=97)
+
+                text += all_reqs[esrs_category_id][matched_sec_name]
+        elif row[1].family == "esrs":
+            csv_data = pd.read_csv(esrs_text_csv)
+            text_data = csv_data[(csv_data.source == row[0].source) & (csv_data.href.notnull())].relevant_text
+            if isinstance(text_data.values[0], str):
+                text = text_data.values[0]
+
+        if text:
+            esrs_req_map_model = EsrsReqMappingModel(
+                esrs_category_id=esrs_category_id,
+                esrs_family=esrs_family,
+                section_name=section_name,
+                std_mapping_id=std_mapping_id,
+                text=text,
+            )
+            esrs_req_map_table = EsrsReqMapping(
+                esrs_category_id=esrs_req_map_model.esrs_category_id,
+                esrs_family=esrs_req_map_model.esrs_family,
+                section_name=esrs_req_map_model.section_name,
+                std_mapping_id=esrs_req_map_model.std_mapping_id,
+                text=esrs_req_map_model.text,
+            )
+            session.add(esrs_req_map_table)
+            session.commit()
 
 
 def process_esrs_data(session, storage_path: str, model_path: str, pdf2img_out_path: str):
@@ -571,6 +704,107 @@ def curate_blob_lvl_annotations(session, dataset_path):
                         print(f"{blob_lvl_annotation.blob_id} is not present in page {doc_ref}")
 
 
+def create_data_rag(session):
+    doc_list = []
+    doc_instances = session.query(DocumentInstances).all()
+    print(doc_instances)
+
+
+def json_to_docx(session, storage_location, limit: None):
+    doc_instances = session.query(DocumentInstances).all()
+    values_w_revision = session.query(ValuesWithRevisions).all()
+    values_w_revision = [fvwr.document_id for fvwr in values_w_revision]
+    if limit:
+        doc_paths = [
+            doc.wz_storage_location.rsplit(".", 1)[0] + ".json" for doc in doc_instances if doc.id in values_w_revision
+        ][:limit]
+    else:
+        doc_paths = [
+            doc.wz_storage_location.rsplit(".", 1)[0] + ".json"
+            for doc in tqdm(doc_instances, desc="getting file paths")
+            if doc.id in values_w_revision
+        ]
+
+    for json_file in tqdm(doc_paths, desc="Processing pdf parsed jsons"):
+        json_data_path = os.path.splitext(os.path.basename(json_file))[0]
+        tgt_path = os.path.join(storage_location, f"{json_data_path}.docx")
+
+        if os.path.exists(json_file) and not os.path.exists(tgt_path):
+            # Create a new DOCX document
+            doc = Document()
+
+            doc_id = os.path.splitext(os.path.basename(json_file))[0]
+
+            # Load JSON data from file
+            with open(json_file, "r") as f:
+                data = json.load(f)
+
+            # Add content to the DOCX document based on JSON data
+            for page_no, blob_list in data.items():
+                for blob_idx, blob_dict in enumerate(blob_list):
+                    try:
+                        text = blob_dict["text"]
+                        if blob_dict["class_name"] != "table":
+                            text = re.sub(r"-\s+", "", text)
+                            text = re.sub(r"\s+", " ", text)
+                            text = re.sub(r"\s$|^\s", "", text)
+                        doc.add_paragraph(f"{doc_id}-{page_no}-{blob_idx}:::")
+                        doc.add_paragraph(f"{text}")
+
+                    except ValueError:
+                        text = re.sub(
+                            r'[\x07\x08\n\x0b\x0c\r\x0e\x0f=&gt;)",%&*0-9;<>AMP;OQRSTU$K\x8c\x8d\x8e]', "", text
+                        )
+                        text = re.sub(r"[^a-zA-Z0-9\s]", "", text)
+                        text = re.sub(r"[^\x20-\x7E]", "", text)
+                        doc.add_paragraph(f"{text}")
+
+                    doc.add_paragraph("\n")
+
+            # Save the DOCX document
+            doc.save(tgt_path)
+
+
+def docx_to_json(session, src_docx_path, tgt_json_path):
+    blob_info_pattern1 = r"\d+-\d+:::"
+
+    doc_instances = session.query(DocumentInstances).all()
+    doc_paths = [doc.wz_storage_location.rsplit(".", 1)[0] + ".json" for doc in doc_instances]
+
+    original_json_dict = {}
+    for json_file in tqdm(doc_paths, desc="Processing pdf parsed jsons"):
+        if os.path.exists(json_file):
+            with open(json_file, "r") as f:
+                data = json.load(f)
+            original_json_dict[os.path.splitext(os.path.basename(json_file))[0]] = data
+
+    # Load the DOCX document
+    for docx_file in tqdm(os.listdir(src_docx_path), desc="Processing docx files"):
+        docx_file = os.path.join(src_docx_path, docx_file)
+        base_file_name = os.path.splitext(os.path.basename(docx_file))[0]
+        doc = Document(docx_file)
+        data = {}
+        passage_idx_string = ""
+
+        for paragraph in doc.paragraphs:
+            if re.findall(blob_info_pattern1, paragraph.text):
+                passage_idx_string = re.findall(blob_info_pattern1, paragraph.text)[0]
+                passage_idx_string = passage_idx_string.strip(":::")
+                page_blob_info = passage_idx_string.split("-")
+                page_no, blob_idx = int(page_blob_info[0]), int(page_blob_info[1])
+                continue
+            # Split the paragraph text based on ':::'
+            if passage_idx_string:
+                parts = paragraph.text.split(":::")
+                if len(parts) == 2:
+                    original_json_dict[base_file_name[:-3]][str(page_no)][blob_idx] = paragraph.text
+
+        json_file = os.path.join(tgt_json_path, f"{base_file_name}.json")
+        with open(json_file, "w") as f:
+            # json.dump(original_json_dict[base_file_name[:-3]], f, indent=2)
+            json.dump(original_json_dict[base_file_name], f, indent=2)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -591,8 +825,14 @@ def main():
     args = parse_args()
     config = yaml.safe_load(open(args.config, "r"))
 
+    raw_esrs_req_path = config.pop("raw_esrs_req_path")
+    esrs_text_csv = config.pop("esrs_text_csv")
+    json_to_docx_dest = config.pop("json_to_docx_dest")
+    json_to_docx_docs_limit = config.pop("json_to_docx_docs_limit")
     dataset_base_path = config.pop("dataset_base_path")
     db_file_path = config.pop("db_file_path")
+    docx_src = config.pop("docx_src")
+    docx_to_json_dest = config.pop("docx_to_json_dest")
     gpt_reponse_file_path = config.pop("gpt_reponse_file_path")
     if not os.path.exists(gpt_reponse_file_path):
         os.mkdir(gpt_reponse_file_path)
@@ -600,14 +840,14 @@ def main():
     logger = setup_logger(log_file=config.pop("log_dir"))
 
     # clean up table
-    # if args.cleanup_selected_table:
-    #     engine = create_engine(f"sqlite:///{db_file_path}")
-    #     metadata = MetaData()
-    #     metadata.reflect(bind=engine)
-    #     table_name = config.pop("table_to_be_cleared")
-    #     table = Table(table_name, metadata, autoload_with=engine)
-    #     table.drop(engine)
-    #     logger.info("Cleanup complete")
+    if args.cleanup_selected_table:
+        engine = create_engine(f"sqlite:///{db_file_path}")
+        metadata = MetaData()
+        metadata.reflect(bind=engine)
+        table_name = config.pop("table_to_be_cleared")
+        table = Table(table_name, metadata, autoload_with=engine)
+        table.drop(engine)
+        logger.info("Cleanup complete")
 
     # Create SQLite database
     engine = create_engine(f"sqlite:///{db_file_path}")
@@ -646,13 +886,21 @@ def main():
     # )
 
     # Calculate gpt3.5 cost for reports translation task/llama2 data translation
-    convert_pdf_est_json = run_blob_conversion(
-        session,
-        config.pop("model_name"),
-        estimate_cost=config.pop("estimate_conversion_cost"),
-        local_storage_path=dataset_base_path,
-        limit_docs=config.pop("docs_limit"),
-    )
+    # convert_pdf_est_json = run_blob_conversion(
+    #     session,
+    #     config.pop("model_name"),
+    #     estimate_cost=config.pop("estimate_conversion_cost"),
+    #     local_storage_path=dataset_base_path,
+    #     limit_docs=config.pop("docs_limit"),
+    # )
+
+    # Run blob conversion using easy NMT
+    # run_blob_conversion_easy_nmt(session,
+    #                              local_storage_path=dataset_base_path)
+
+    json_to_docx(session, json_to_docx_dest, limit=None)
+
+    # docx_to_json(session, docx_src, docx_to_json_dest)
 
     # create srn_datapoint table containing disclosure requirements detailed data
     # collect_standards_list(session)
@@ -669,6 +917,12 @@ def main():
     # curate_database
     # curate_blob_lvl_annotations(session, dataset_base_path)
 
+    # Dump esrs requirement to database
+    # dump_esrs_data_todb(session, raw_esrs_req_path, esrs_text_csv)
+
+    # Create data for RAG implementation
+    # create_data_rag(session)
+
     session.close()
 
     # with open(config.pop("err_stats_json"), "w") as f:
@@ -677,8 +931,8 @@ def main():
     # with open(config.pop("api_est_json"), "w") as f:
     #     json.dump(cost_est_dict, f, indent=4)
 
-    with open(config.pop("convert_pdf_est_json"), "w") as f:
-        json.dump(convert_pdf_est_json, f, indent=4)
+    # with open(config.pop("convert_pdf_est_json"), "w") as f:
+    #     json.dump(convert_pdf_est_json, f, indent=4)
 
 
 if __name__ == "__main__":

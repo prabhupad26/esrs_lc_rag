@@ -1,0 +1,39 @@
+gpu_configs:
+  local_inference:
+    env_variables:
+      CMAKE_ARGS: "-DLLAMA_BLAS=on -DLLAMA_BLAS_VENDOR=OpenBLAS"
+      FORCE_CMAKE: "1"
+
+prompt_config:
+  prompt_dir: "/cluster/home/repo/my_llm_experiments/esrs_data_collection/srn_data_collector/lc_rag/prompts"
+  prompt_iu: "esrs_sys_msg.prompt"
+
+
+retriever_config:
+  wali_recommended_blobs: "/cluster/home/srn_storage/sample_retriever_recommendations"
+  wali_ml_training_pkldocs: "/cluster/home/training_runs/esrs_classifier_final/Parsing/ordinary-priority-000/documents.p"
+  debug_doc:
+    top_n: 10
+    path: "/cluster/home/srn_recommendation_results/fff9295a-2d30-468c-873c-aa4e6c5d7f14.json"
+  doc_batch:
+    path: "/cluster/home/srn_recommendation_results"
+
+lang_chain_config:
+  enable_langsmith_tracing: True
+  model_config:
+    # - type: "gpt"
+    #   name: "gpt-3.5-turbo"
+    #   model_name: "gpt-3.5-turbo"
+    #   temperature: 0
+    - type: "llama"
+      name: "llama-2-13b-chat.ggufv3.q8_0.bin"
+      model_path: "/cluster/home/repo/my_llm_experiments/llama-weights/13B/llama-2-13b-chat.ggufv3.q8_0.bin"
+      n_gpu_layers: -1
+      n_batch: 512
+      n_ctx: 5000
+      f16_kv: True
+      verbose: True
+      temperature: 0
+
+annotation_storage_config:
+  sqlite_db: "/cluster/home/repo/my_llm_experiments/esrs_data_collection/srn_data_collector/main.db"

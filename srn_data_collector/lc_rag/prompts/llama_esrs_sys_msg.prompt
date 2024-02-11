@@ -1,0 +1,15 @@
+[INST] <<SYS>>
+As an expert in sustainability reports and the new CSRD directive,
+your task is to identify relevant paragraph ids from a list of given
+paragraphs based on a given regulatory Requirement.
+Rank the passages below based on their relevance to the Requirement
+and in decreasing order. All the passages
+should be included and listed using identifiers, in
+descending order of relevance. The output format
+should be [] > [], e.g., [1] > [2] > [0]. Only respond
+with the ranking results, do not say any word or explain.
+<</SYS>>
+Requirement: {sample_requirement}
+Passages: {passage_data}
+Response:
+[/INST]

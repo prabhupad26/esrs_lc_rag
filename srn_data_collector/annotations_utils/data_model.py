@@ -177,6 +177,17 @@ class RptRequirementsMapping(Base):
     reporting_requirements = relationship("ReportingRequirements")
 
 
+class EsrsReqMapping(Base):
+    __tablename__ = "esrs_section_mapping"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    std_mapping_id = Column(String, ForeignKey("map_reporting_requirements_std_list.standard"))
+    section_name = Column(String)
+    esrs_family = Column(String)
+    text = Column(String)
+    esrs_category_id = Column(String)
+
+
 # Pydantic model for input validation
 class CompanyDetailsModel(BaseModel):
     class Config:
@@ -292,6 +303,14 @@ class RptRequirementsMappingModel(BaseModel):
     source: str
     comment: str | None
     type: str
+
+
+class EsrsReqMappingModel(BaseModel):
+    std_mapping_id: str
+    section_name: str
+    esrs_family: str
+    text: str
+    esrs_category_id: str
 
 
 if __name__ == "__main__":

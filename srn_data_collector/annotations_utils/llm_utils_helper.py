@@ -168,13 +168,18 @@ def translate_json_parallel(
 
 
 def translate_json(model, source_text, max_tokens):
-    prompt_template = TRANSLATE_PROMPT_TEMPLATE.format(source_text=source_text["text"])
-    messages = [{"role": "user", "content": prompt_template}]
-    result_str = "".join([elem for elem in tqdm(model.run(messages, max_tokens=max_tokens, max_attempts=3))])
+    message = [
+        {
+            "role": "system",
+            "content": "You are a translation assistant who replies with german translated text for the given english text without any english text",
+        },
+        {"role": "user", "content": source_text["text"]},
+    ]
+    result_str = model.run(message, max_tokens=max_tokens, max_attempts=3, stream=False)
     try:
-        source_text["text"] = result_str.replace("Translated text:", "").strip()
+        source_text["text"] = result_str.strip()
     except json.decoder.JSONDecodeError:
-        print(f"Prompt that couldnt be translated : {prompt_template} \n Response string {result_str}")
+        print(f"Prompt that couldnt be translated : {source_text['text']} \n Response string {result_str}")
 
 
 def json_translate_estimate_gpt(source_text, max_tokens):

@@ -7,14 +7,14 @@ convert_pdf_est_json:  /cluster/home/repo/my_llm_experiments/esrs_data_collectio
 fuzzy_match_thresh: 70
 
 # remove all rows from table
-table_to_be_cleared: dim_blob_lvl_annotations
+table_to_be_cleared: esrs_section_mapping
 
 # save path for gpt3.5 reponse
 gpt_reponse_file_path: /cluster/home/srn_storage/gpt_reponse_file_path
 
 
 # Translation task
-model_name:  "llama2-13b" # "gpt-3.5-turbo"
+model_name:  "llama2-7b" # "llama2-13b" # "gpt-3.5-turbo"
 max_tokens: 2048
 estimate_conversion_cost: False
 docs_limit: 50
@@ -24,3 +24,13 @@ docs_limit: 50
 esrs_drafts_data: /cluster/home/srn_storage/esrs_draft_data
 pdf2img_out_path: /cluster/home/repo/my_llm_experiments/esrs_data_collection/srn_data_collector/pdf2img_images
 model_path: /cluster/home/repo/my_llm_experiments/FRCNN_cbo_275.viper
+raw_esrs_req_path: /cluster/home/repo/my_llm_experiments/esrs_data_collection/srn_data_collector/parse_esrs_requirements/esrs_requirement_main.json
+esrs_text_csv: /cluster/home/repo/my_llm_experiments/esrs_data_collection/srn_data_collector/parse_esrs_requirements/esrs_text.csv
+
+
+# json to docx
+json_to_docx_dest: /cluster/home/srn_storage/json_to_docx/
+json_to_docx_docs_limit: 5
+# docx_src: /cluster/home/srn_storage_translated_docs
+docx_src: /cluster/home/srn_storage/json_to_docx/
+docx_to_json_dest: /cluster/home/srn_storage/docx_to_json/
