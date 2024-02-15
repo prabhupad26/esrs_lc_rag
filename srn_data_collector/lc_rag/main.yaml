@@ -1,3 +1,6 @@
+result_path: "/cluster/home/srn_recommendation_results/rag_result/"
+annotation_file: "/cluster/home/srn_recommendation_results/aeb9e8d5-3300-4f7a-b0d0-98110b137500.json"
+
 gpu_configs:
   local_inference:
     env_variables:
@@ -10,30 +13,36 @@ prompt_config:
 
 
 retriever_config:
-  wali_recommended_blobs: "/cluster/home/srn_storage/sample_retriever_recommendations"
-  wali_ml_training_pkldocs: "/cluster/home/training_runs/esrs_classifier_final/Parsing/ordinary-priority-000/documents.p"
-  debug_doc:
-    top_n: 10
-    path: "/cluster/home/srn_recommendation_results/fff9295a-2d30-468c-873c-aa4e6c5d7f14.json"
-  doc_batch:
-    path: "/cluster/home/srn_recommendation_results"
+  - type: cosine-retriever # langchain in-built
+    file_path: "/cluster/home/srn_storage/1f87c04c-a052-49e1-b61d-9cff8cf3186a/2022/SR/aeb9e8d5-3300-4f7a-b0d0-98110b137500.json"
+    jq_schema: '.doc_data[]'
+    text_content: False
+    content_key: 'text'
+    search__topk: 10
+  # - type: wali-ml
+  #   debug_doc:
+  #     top_n: 3
+  #     total_top_n: 20
+  #     path: "/cluster/home/srn_recommendation_results/aeb9e8d5-3300-4f7a-b0d0-98110b137500.json"
+  #   doc_batch:
+  #     path: "/cluster/home/srn_recommendation_results"
 
 lang_chain_config:
   enable_langsmith_tracing: True
   model_config:
-    # - type: "gpt"
-    #   name: "gpt-3.5-turbo"
-    #   model_name: "gpt-3.5-turbo"
-    #   temperature: 0
-    - type: "llama"
-      name: "llama-2-13b-chat.ggufv3.q8_0.bin"
-      model_path: "/cluster/home/repo/my_llm_experiments/llama-weights/13B/llama-2-13b-chat.ggufv3.q8_0.bin"
-      n_gpu_layers: -1
-      n_batch: 512
-      n_ctx: 5000
-      f16_kv: True
-      verbose: True
+    - type: "gpt"
+      name: "gpt-3.5-turbo"
+      model_name: "gpt-3.5-turbo"
       temperature: 0
+    # - type: "llama"
+    #   name: "llama-2-70b-chat.Q3_K_L.gguf"
+    #   model_path: "/cluster/home/repo/my_llm_experiments/llama-weights/70B/llama-2-70b-chat.Q3_K_L.gguf"
+    #   n_gpu_layers: -1
+    #   n_batch: 512
+    #   n_ctx: 5000
+    #   f16_kv: True
+    #   verbose: True
+    #   temperature: 0
 
 annotation_storage_config:
   sqlite_db: "/cluster/home/repo/my_llm_experiments/esrs_data_collection/srn_data_collector/main.db"

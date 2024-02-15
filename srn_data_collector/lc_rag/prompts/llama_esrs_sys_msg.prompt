@@ -6,8 +6,8 @@ Rank the passages below based on their relevance to the Requirement
 and in decreasing order. All the passages
 should be included and listed using identifiers, in
 descending order of relevance. The output format
-should be [] > [], e.g., [1] > [2] > [0]. Only respond
-with the ranking results, do not say any word or explain.
+should be [] > [], e.g., [1] > [2] > [0]. No explaination is required the output
+shall only contain the given output format and nothing else.
 <</SYS>>
 Requirement: {sample_requirement}
 Passages: {passage_data}
