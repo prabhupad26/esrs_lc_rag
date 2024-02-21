@@ -1,0 +1,142 @@
+{
+  "Topical ESRS": {
+    "ESRS E1": {
+      "Label": "Climate change",
+      "Sub topics": ["Climate change adaptation", "Climate change mitigation", "Energy"],
+      "Sub-sub-topics": []
+    },
+    "ESRS E2": {
+      "Label": "Pollution",
+      "Sub topics": [
+        "Pollution of air",
+        "Pollution of water",
+        "Pollution of soil",
+        "Pollution of living organisms and food resources",
+        "Substances of concern",
+        "Substances of very high concern",
+        "Microplastics"
+      ],
+      "Sub-sub-topics": []
+    },
+    "ESRS E3": {
+      "Label": "Water and marine resources",
+      "Sub topics": ["Water", "Marine resources"],
+      "Sub-sub-topics": [
+        "Water consumption",
+        "Water withdrawals",
+        "Water discharges",
+        "Water discharges in the oceans",
+        "Extraction and use of marine resources"
+      ]
+    },
+    "ESRS E4": {
+      "Label": "Biodiversity and ecosystems",
+      "Sub topics": ["Direct impact drivers of biodiversity loss"],
+      "Sub-sub-topics": [
+        "Climate Change",
+        "Land-use change, fresh water-use change and sea-use change",
+        "Direct exploitation",
+        "Invasive alien species",
+        "Pollution",
+        "Others",
+        "Impacts on the state of species",
+        "Examples: Species population size, Species global extinction risk",
+        "Impacts on the extent and condition of ecosystems",
+        "Examples: Land degradation, Desertification, Soil sealing",
+        "Impacts and dependencies on ecosystem services"
+      ]
+    },
+    "ESRS E5": {
+      "Label": "Circular economy",
+      "Sub topics": [
+        "Resources inflows, including resource use",
+        "Resource outflows related to products and services",
+        "Waste"
+      ],
+      "Sub-sub-topics": []
+    },
+    "ESRS S1": {
+      "Label": "Own workforce",
+      "Sub topics": ["Working conditions", "Equal treatment and opportunities for all", "Other work-related rights"],
+      "Sub-sub-topics": [
+        "Secure employment",
+        "Working time",
+        "Adequate wages",
+        "Social dialogue",
+        "Freedom of association, the existence of works councils and the information, consultation and participation rights of workers",
+        "Collective bargaining, including rate of workers covered by collective agreements",
+        "Work-life balance",
+        "Health and safety"
+      ]
+    },
+    "ESRS S2": {
+      "Label": "Workers in the value chain",
+      "Sub topics": ["Working conditions", "Equal treatment and opportunities for all", "Other work-related rights"],
+      "Sub-sub-topics": [
+        "Secure employment",
+        "Working time",
+        "Adequate wages",
+        "Social dialogue",
+        "Freedom of association, including the existence of work councils",
+        "Collective bargaining",
+        "Work-life balance",
+        "Health and safety"
+      ]
+    },
+    "ESRS S3": {
+      "Label": "Affected communities",
+      "Sub topics": [
+        "Communities’ economic, social and cultural rights",
+        "Communities’ civil and political rights",
+        "Rights of indigenous peoples"
+      ],
+      "Sub-sub-topics": [
+        "Adequate housing",
+        "Adequate food",
+        "Water and sanitation",
+        "Land-related impacts",
+        "Security-related impacts",
+        "Freedom of expression",
+        "Freedom of assembly",
+        "Impacts on human rights defenders",
+        "Free, prior and informed consent",
+        "Self-determination",
+        "Cultural rights"
+      ]
+    },
+    "ESRS S4": {
+      "Label": "Consumers and end-users",
+      "Sub topics": [
+        "Information-related impacts for consumers and/or end-users",
+        "Personal safety of consumers and/or end-users",
+        "Social inclusion of consumers and/or end-users"
+      ],
+      "Sub-sub-topics": [
+        "Privacy",
+        "Freedom of expression",
+        "Access to (quality) information",
+        "Health and safety",
+        "Security of a person",
+        "Protection of children",
+        "Non-discrimination",
+        "Access to products and services",
+        "Responsible marketing practices"
+      ]
+    },
+    "ESRS G1": {
+      "Label": "Business conduct",
+      "Sub topics": [
+        "Corporate culture",
+        "Protection of whistleblowers",
+        "Animal welfare",
+        "Political engagement and lobbying activities",
+        "Management of relationships with suppliers including payment practices",
+        "Corruption and bribery"
+      ],
+      "Sub-sub-topics": [
+        "Prevention and detection including training",
+        "Incidents"
+      ]
+    }
+  }
+}
