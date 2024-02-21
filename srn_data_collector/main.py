@@ -752,6 +752,7 @@ def json_to_docx(session, storage_location, limit: None):
                         doc.add_paragraph(f"{text}")
 
                     except ValueError:
+                        # To remove the special chars
                         text = re.sub(
                             r'[\x07\x08\n\x0b\x0c\r\x0e\x0f=&gt;)",%&*0-9;<>AMP;OQRSTU$K\x8c\x8d\x8e]', "", text
                         )
@@ -860,30 +861,30 @@ def main():
     session = Session(engine)
 
     # Update companies data
-    # collect_companies_data(session)
+    collect_companies_data(session)
 
     # Update annotations data
-    # collect_annotations(session)
+    collect_annotations(session)
 
     # collect documents metadata
-    # collect_documents_metadata(session, local_storage_path=dataset_base_path)
+    collect_documents_metadata(session, local_storage_path=dataset_base_path)
 
     # collect compliance item data
-    # collect_compliance_item_data(session)
+    collect_compliance_item_data(session)
 
     # collect reporting item data
-    # collect_reporting_item_data(session)
+    collect_reporting_item_data(session)
 
     # collect blob level annotations from json files
-    # error_stat_dict, cost_est_dict = collect_blob_lvl_annotations(
-    #     session,
-    #     logger,
-    #     local_storage_path=dataset_base_path,
-    #     error_stat_dict={},
-    #     fuzzy_match_thresh=config.pop("fuzzy_match_thresh", None),
-    #     estimate_cost=False,
-    #     gpt_reponse_file_path=gpt_reponse_file_path,
-    # )
+    error_stat_dict, cost_est_dict = collect_blob_lvl_annotations(
+        session,
+        logger,
+        local_storage_path=dataset_base_path,
+        error_stat_dict={},
+        fuzzy_match_thresh=config.pop("fuzzy_match_thresh", None),
+        estimate_cost=False,
+        gpt_reponse_file_path=gpt_reponse_file_path,
+    )
 
     # Calculate gpt3.5 cost for reports translation task/llama2 data translation
     # convert_pdf_est_json = run_blob_conversion(
@@ -909,10 +910,12 @@ def main():
     # collect_std_requirements(session)
 
     # download and convert esrs_data esrs nov 2022 draft
-    # process_esrs_data(session,
-    #                   storage_path=config.pop('esrs_drafts_data'),
-    #                   model_path=config.pop('model_path'),
-    #                   pdf2img_out_path=config.pop('pdf2img_out_path'))
+    process_esrs_data(
+        session,
+        storage_path=config.pop("esrs_drafts_data"),
+        model_path=config.pop("model_path"),
+        pdf2img_out_path=config.pop("pdf2img_out_path"),
+    )
 
     # curate_database
     # curate_blob_lvl_annotations(session, dataset_base_path)

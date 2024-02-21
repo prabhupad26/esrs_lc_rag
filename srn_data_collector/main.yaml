@@ -14,7 +14,7 @@ gpt_reponse_file_path: /cluster/home/srn_storage/gpt_reponse_file_path
 
 
 # Translation task
-model_name:  "llama2-7b" # "llama2-13b" # "gpt-3.5-turbo"
+model_name:  "llama2-7b" # "llama2-13b" # "gpt-3.5-turbo" - is a paid api for first run convert_pdf_est_json function in main.py to find out the cost.
 max_tokens: 2048
 estimate_conversion_cost: False
 docs_limit: 50
