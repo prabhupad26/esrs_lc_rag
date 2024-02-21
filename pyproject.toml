@@ -23,6 +23,12 @@ stqdm = "^0.0.5"
 python = "^3.11"
 torch = "^2.1.1"
 torchvision = "*"
+langchain = "*"
+langchain-community = "*"
+langchainhub = "*"
+langchain-openai = "*"
+chromadb = "*"
+jq="*"
 
 
 [build-system]
