@@ -42,7 +42,7 @@ class WaliMLRetriever(BaseRetriever):
                             break
 
         if self.retriever_config["debug_doc"].get("total_top_n"):
-            return result[: self.retriever_config["debug_doc"].get("top_n")]
+            return result[: self.retriever_config["debug_doc"].get("total_top_n")]
         return result
 
     def custom_retriever(self):

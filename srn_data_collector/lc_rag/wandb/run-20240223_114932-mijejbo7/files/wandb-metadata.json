@@ -1,0 +1,100 @@
+{
+    "os": "Linux-6.5.0-18-generic-x86_64-with-glibc2.35",
+    "python": "3.11.7",
+    "heartbeatAt": "2024-02-23T10:49:37.831663",
+    "startedAt": "2024-02-23T10:49:32.209726",
+    "docker": null,
+    "cuda": null,
+    "args": [],
+    "state": "running",
+    "program": "/home/ppradhan/Documents/my_learnings/esrs_data_collection/srn_data_collector/lc_rag/main.py",
+    "codePathLocal": "main.py",
+    "codePath": "srn_data_collector/lc_rag/main.py",
+    "git": {
+        "remote": "https://github.com/prabhupad26/esrs_lc_rag.git",
+        "commit": "b53911b214205a7ebd9285943ee9c9a85df76d93"
+    },
+    "email": "prabhupad26@gmail.com",
+    "root": "/home/ppradhan/Documents/my_learnings/esrs_data_collection",
+    "host": "mp-mobil-90",
+    "username": "ppradhan",
+    "executable": "/home/ppradhan/miniconda3/envs/lc_rag/bin/python",
+    "cpu_count": 10,
+    "cpu_count_logical": 12,
+    "cpu_freq": {
+        "current": 3239.869083333333,
+        "min": 400.0,
+        "max": 4000.0
+    },
+    "cpu_freq_per_core": [
+        {
+            "current": 4234.773,
+            "min": 400.0,
+            "max": 4800.0
+        },
+        {
+            "current": 2809.557,
+            "min": 400.0,
+            "max": 4800.0
+        },
+        {
+            "current": 3799.353,
+            "min": 400.0,
+            "max": 4800.0
+        },
+        {
+            "current": 3277.077,
+            "min": 400.0,
+            "max": 4800.0
+        },
+        {
+            "current": 3500.575,
+            "min": 400.0,
+            "max": 3600.0
+        },
+        {
+            "current": 3500.177,
+            "min": 400.0,
+            "max": 3600.0
+        },
+        {
+            "current": 3499.546,
+            "min": 400.0,
+            "max": 3600.0
+        },
+        {
+            "current": 3500.279,
+            "min": 400.0,
+            "max": 3600.0
+        },
+        {
+            "current": 3499.226,
+            "min": 400.0,
+            "max": 3600.0
+        },
+        {
+            "current": 3226.177,
+            "min": 400.0,
+            "max": 3600.0
+        },
+        {
+            "current": 2532.005,
+            "min": 400.0,
+            "max": 3600.0
+        },
+        {
+            "current": 1499.684,
+            "min": 400.0,
+            "max": 3600.0
+        }
+    ],
+    "disk": {
+        "/": {
+            "total": 466.88475799560547,
+            "used": 228.56878280639648
+        }
+    },
+    "memory": {
+        "total": 15.302303314208984
+    }
+}

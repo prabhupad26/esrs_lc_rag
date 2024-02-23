@@ -29,6 +29,8 @@ langchainhub = "*"
 langchain-openai = "*"
 chromadb = "*"
 jq="*"
+scikit-learn="*"
+wandb="*"
 
 
 [build-system]

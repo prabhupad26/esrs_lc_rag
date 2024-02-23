@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "/home/ppradhan/Documents/my_learnings/esrs_data_collection/srn_data_collector/lc_rag/main.py", line 245, in <module>
+    annotation_file = config.pop("annotation_file")
+                      ^^^^^^

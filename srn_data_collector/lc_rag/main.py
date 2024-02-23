@@ -163,14 +163,21 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--config",
-        default="/cluster/home/repo/my_llm_experiments/esrs_data_collection/srn_data_collector/lc_rag/main.yaml",
+        default="main.yaml",
         type=str,
         help="Path to config",
     )
     return parser.parse_args()
 
 
-def main(annotation_file: str, annotation_storage_config: Dict, document_id: str, retriever_type: str, **config):
+def main(
+    annotation_file: str,
+    annotation_storage_config: Dict,
+    document_id: str,
+    retriever_type: str,
+    req2blob_gt: dict,
+    **config,
+):
     # Initialize environment
     initialize_env(config.pop("gpu_configs"))
 
@@ -185,9 +192,9 @@ def main(annotation_file: str, annotation_storage_config: Dict, document_id: str
         retriever = WaliMLRetriever(retriever_config=retriever_config)
         # Get requirements list
         requirements_dict = retriever.get_requirements(annotation_storage_config)
-        # retriever_results: List[Document] = waliml_retriever._get_relevant_documents("E1.AR43",retriever_config=retriever_config, run_manager=None)
+        # retriever_results: List[Document] = waliml_retriever._get_relevant_documents("E1.AR43", run_manager=None)
 
-    req2blob_gt: Dict[str, List[List[str]]] = get_annotation_dict(annotation_file, annotation_storage_config)
+    # req2blob_gt: Dict[str, List[List[str]]] = get_annotation_dict(annotation_file, annotation_storage_config)
 
     # Init chain
     lc_config = config.pop("lang_chain_config")
@@ -229,7 +236,7 @@ def main(annotation_file: str, annotation_storage_config: Dict, document_id: str
         )
 
     # Saving the response
-    with open(f"/cluster/home/srn_recommendation_results/rag_result/{document_id}_{retriever_type}.pkl", "wb") as f:
+    with open(f"results/{document_id}_{retriever_type}.pkl", "wb") as f:
         pkl.dump(results, f)
 
     # Evaluate results
@@ -237,7 +244,7 @@ def main(annotation_file: str, annotation_storage_config: Dict, document_id: str
 
 
 if __name__ == "__main__":
-    run = wandb.init(project="thesis-llm")
+    # run = wandb.init(project="thesis-llm")
 
     args = parse_args()
     config = yaml.safe_load(open(args.config, "r"))
@@ -262,9 +269,10 @@ if __name__ == "__main__":
             annotation_storage_config=annotation_storage_config,
             document_id=document_id,
             retriever_type=retriever_type,
+            req2blob_gt=req2blob_gt,
             **config,
         )
 
     sensitivity, mAP_score, f1_score = calculate_metrics(results, req2blob_gt)
 
-    run.finish()
+    # run.finish()
