@@ -1,4 +1,5 @@
 import json
+import os
 from typing import Dict, List
 
 from langchain_community.document_loaders import JSONLoader
@@ -16,30 +17,41 @@ from srn_data_collector.annotations_utils.data_model import (
     RptRequirementsMapping,
     StandardsList,
 )
-from srn_data_collector.lc_rag.utils import convert_file_name, metadata_func
+from srn_data_collector.lc_rag.utils import convert_file_name, metadata_func, get_source_from_citem, clean_text
 
 
 class WaliMLRetriever(BaseRetriever):
     retriever_config: Dict
+    annotation_storage_config: Dict
 
     def _get_relevant_documents(self, query: str, *, run_manager: CallbackManagerForRetrieverRun) -> List[Document]:
         """
         Collect the blobs of all the compliance items in a list for every requirement and return top_n blobs
         """
         result = []
+        result_buf = []
         recommended_doc_dict = self.custom_retriever()
-        for compliance_item in recommended_doc_dict:
-            blob_cnt = 0
-            if recommended_doc_dict[compliance_item]["section_name"] == query:
-                recommendations = recommended_doc_dict[compliance_item].get("recommendations", [])
-                recommendations = sorted(recommendations, key=lambda x: x[1], reverse=True)
-                for recommendation in recommendations:
-                    blob_data, _ = recommendation
-                    if blob_data["class_name"] not in ["header/footer"]:
-                        result.append(Document(page_content=blob_data.pop("text"), metadata=blob_data))
-                        blob_cnt += 1
-                        if blob_cnt > self.retriever_config["debug_doc"].get("top_n"):
-                            break
+        # for compliance_item in recommended_doc_dict:
+        #     blob_cnt = 0
+        #     if recommended_doc_dict[compliance_item]["section_name"] == query:
+        #         recommendations = recommended_doc_dict[compliance_item].get("recommendations", [])
+        #         recommendations = sorted(recommendations, key=lambda x: x[1], reverse=True)
+        #         for recommendation in recommendations:
+        #             blob_data, _ = recommendation
+        #             if blob_data["class_name"] not in ["header/footer"]:
+        #                 result.append(Document(page_content=blob_data.pop("text"), metadata=blob_data))
+        #                 blob_cnt += 1
+        #                 if blob_cnt > self.retriever_config["debug_doc"].get("top_n"):
+        #                     break
+        for compliance_item, recom_items in recommended_doc_dict.items():
+            source_names: List[str] = get_source_from_citem(compliance_item, self.annotation_storage_config)
+            for source_name in source_names:
+                if source_name == query:
+                    for recommendation, _ in recom_items['recommendations']:
+                        if recommendation["class_name"] not in ["header/footer"] and \
+                        (recommendation["blob_id"],recommendation["document_ref"]) not in result_buf:
+                            result_buf.append((recommendation["blob_id"],recommendation["document_ref"]))
+                            result.append(Document(page_content=clean_text(recommendation.pop("text")), metadata=recommendation))
 
         if self.retriever_config["debug_doc"].get("total_top_n"):
             return result[: self.retriever_config["debug_doc"].get("total_top_n")]
@@ -93,7 +105,8 @@ class WaliMLRetriever(BaseRetriever):
 
 
 class ChromaDBRetriever:
-    def __init__(self, retriever_config) -> None:
+    def __init__(self, document_id, retriever_config) -> None:
+        self.document_id = document_id
         self.retriever_config = retriever_config
 
     def __call__(self):
@@ -103,7 +116,7 @@ class ChromaDBRetriever:
         """
         Method to load, process and build vectorstore
         """
-        raw_json_path = self.retriever_config.pop("file_path")
+        raw_json_path = os.path.join(self.retriever_config.pop("file_path"), f"{self.document_id}.json")
         raw_json_path_processed = convert_file_name(raw_json_path)
         search__topk = self.retriever_config.pop("search__topk")
 
@@ -117,7 +130,7 @@ class ChromaDBRetriever:
             for blob_id, blob_data in enumerate(blob_list):
                 if blob_data["class_name"] not in ["header/footer"] and len(blob_data["text"]) > 50:
                     doc_formatted_data["doc_data"].append(
-                        {"text": blob_data["text"], "blob_id": blob_id, "doc_ref": doc_ref}
+                        {"text": blob_data["text"], "blob_id": blob_id, "document_ref": doc_ref}
                     )
 
         # dump data

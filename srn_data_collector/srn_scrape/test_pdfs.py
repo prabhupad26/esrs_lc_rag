@@ -17,7 +17,7 @@ def get_all_files_in_directory(directory, wildcard=None):
 
 
 if __name__ == "__main__":
-    all_files = get_all_files_in_directory("/cluster/home/srn_storage", "*.pdf")
+    all_files = get_all_files_in_directory("/scratch/srn_storage", "*.pdf")
     results_dict = {"good": 0, "bad": 0}
     for file in tqdm(all_files, desc="Checking good files cnt"):
         try:

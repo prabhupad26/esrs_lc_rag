@@ -1,5 +1,6 @@
-result_path: "results"
-annotation_file: "/home/ppradhan/Documents/srn_recommendations/1eed85a5-b8fe-4403-9e24-f16231daad8e.json"
+result_path: "/root/repo/esrs_lc_rag/srn_data_collector/lc_rag/results/"
+annotation_file: "/root/repo/data/srn_recommendations/3023e67b-bfb2-4886-bcfb-7650c1e6b024.json"
+annotation_files: "/root/repo/data/srn_recommendations/"
 
 gpu_configs:
   local_inference:
@@ -8,13 +9,13 @@ gpu_configs:
       FORCE_CMAKE: "1"
 
 prompt_config:
-  prompt_dir: "prompts"
+  prompt_dir: "/root/repo/esrs_lc_rag/srn_data_collector/lc_rag/prompts"
   prompt_iu: "esrs_sys_msg.prompt"
 
 
 retriever_config:
 #  - type: cosine-retriever # langchain in-built
-#    file_path: "/home/ppradhan/Documents/srn_raw_json/864f83e0-41d4-4784-899e-1d1212c45371.json"
+#    file_path: "/root/repo/data/srn_raw_json/"
 #    jq_schema: '.doc_data[]'
 #    text_content: False
 #    content_key: 'text'
@@ -23,26 +24,27 @@ retriever_config:
      debug_doc:
        top_n: 3
        total_top_n: 20
-       path: "/home/ppradhan/Documents/srn_recommendations/1eed85a5-b8fe-4403-9e24-f16231daad8e.json"
+       path: "/root/repo/data/srn_recommendations/3023e67b-bfb2-4886-bcfb-7650c1e6b024.json"
      doc_batch:
-       path: "/home/ppradhan/Documents/srn_recommendations"
+       path: "/root/repo/data/srn_recommendations/"
 
 lang_chain_config:
   enable_langsmith_tracing: True
-  model_config:
-    - type: "gpt"
-      name: "gpt-3.5-turbo"
-      model_name: "gpt-3.5-turbo"
-      temperature: 0
-    # - type: "llama"
-    #   name: "llama-2-70b-chat.Q3_K_L.gguf"
-    #   model_path: "/cluster/home/repo/my_llm_experiments/llama-weights/70B/llama-2-70b-chat.Q3_K_L.gguf"
-    #   n_gpu_layers: -1
-    #   n_batch: 512
-    #   n_ctx: 5000
-    #   f16_kv: True
-    #   verbose: True
-    #   temperature: 0
+
+model_config:
+  # - type: "gpt"
+  #   name: "gpt-3.5-turbo"
+  #   model_name: "gpt-3.5-turbo"
+  #   temperature: 0
+  - type: "llama"
+    name: llama-2-70b-chat.Q3_K_L.gguf_t0.25 #"llama-2-7b-chat.Q3_K_L.gguf" # "llama-2-70b-chat.Q3_K_L.gguf", llama-2-70b-chat.Q3_K_L.gguf, 
+    model_path: "/scratch/llama_models/llama-2-70b-chat.Q3_K_L.gguf"
+    n_gpu_layers: -1
+    n_batch: 512
+    n_ctx: 10000
+    f16_kv: True
+    verbose: True
+    temperature: 0.25
 
 annotation_storage_config:
-  sqlite_db: "/home/ppradhan/Documents/my_learnings/llm_tuts/main.db"
+  sqlite_db: "/scratch/main.db"

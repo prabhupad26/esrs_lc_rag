@@ -2,6 +2,7 @@
 __pycache__/
 .nfs*
 data-gym-cache/
+wandb/
 
 # Database files
 *.db
@@ -17,3 +18,4 @@ pdf2img_images/
 
 # lock files
 *.lock
+poetry.lock

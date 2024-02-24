@@ -31,6 +31,7 @@ chromadb = "*"
 jq="*"
 scikit-learn="*"
 wandb="*"
+llama-cpp-python="*"
 
 
 [build-system]

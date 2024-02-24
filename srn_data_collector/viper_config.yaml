@@ -1,7 +1,7 @@
-base_dir: /cluster/home/repo/my_llm_experiments/esrs_data_collection
-data_base_path: /cluster/home/srn_storage
-model_path: /cluster/home/repo/my_llm_experiments/FRCNN_cbo_275.viper
-pdf2img_out_path: /cluster/home/repo/my_llm_experiments/esrs_data_collection/srn_data_collector/pdf2img_images
-db_url: sqlite:////cluster/home/repo/my_llm_experiments/esrs_data_collection/srn_data_collector/main.db
+base_dir: /root/repo/esrs_lc_rag/
+data_base_path: /scratch/srn_storage
+model_path: /scratch/FRCNN_cbo_275.viper
+pdf2img_out_path: /root/repo/esrs_lc_rag/srn_data_collector/pdf2img_images
+db_url: sqlite:////scratch/main.db
 doc_ref_table_name: fact_value_with_revision
-error_statistics_path: /cluster/home/srn_storage_error_stat_dir
+error_statistics_path: /scratch/srn_storage_error_stat_dir
