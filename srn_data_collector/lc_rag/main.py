@@ -124,7 +124,11 @@ def process_predicted_dict(predicted_dict):
                     rag_resp = [
                         int(resp.strip().lstrip("[").rstrip("]")) for resp in recommendation["rag_response"].split(">")
                     ]
-                    recommendation = [retriever_results[idx] for idx in rag_resp]
+                    try:
+                        recommendation = [retriever_results[idx] for idx in rag_resp]
+                    except IndexError:
+                        print("Invalid RAG response")
+                        recommendation = []
                     recommendations[idx] = list(set(recommendation))
         predicted_dict[rec_label] = [blob for rec in recommendations for blob in rec]
 
@@ -258,8 +262,13 @@ def run(
             print(f"Requirement{req_label} text is not available in database")
             # requirements_dict[req_label] = ''
             continue
-
-        rag_response = rag_chain.invoke(req_label)
+        
+        rag_response = ''
+        
+        try:
+            rag_response = rag_chain.invoke(req_label)
+        except SystemError:
+            print("Recursion depth mismatch , invalid input")
 
         if req_label not in results:
             results[req_label] = []
@@ -288,12 +297,11 @@ def run(
 
 
 def initiate_chain(config, annotation_file, model_name, model_type, model_config,
-                   precision_accum, recall_accum, f1_dict, n_support=0):
+                   precision_accum, recall_accum, f1_dict, retriever_type,retriever_config,
+                   n_support=0):
     annotation_storage_config = config.pop("annotation_storage_config")
     result_path = config.pop("result_path")
     document_id = get_doc_name(annotation_file)
-    retriever_config = config.pop("retriever_config")[0]
-    retriever_type = retriever_config.pop("type")
     
     
 
@@ -359,6 +367,9 @@ def main():
     run_wandb = wandb.init(project="thesis-llm")
 
     annotation_files = config.pop("annotation_files", None)
+    retriever_config = config.pop("retriever_config")[0]
+    retriever_type = retriever_config.pop("type")
+    
     annotation_files = [os.path.join(annotation_files, file)for file in os.listdir(annotation_files)]
 
     if annotation_files:
@@ -369,6 +380,8 @@ def main():
             model_config = model_config[0]
             model_type = model_config.pop("type")
             model_name = model_config.pop("name")
+            retriever_config = config.pop("retriever_config")[0]
+            retriever_type = retriever_config.pop("type")
 
             sensitivity, precision, f1_score, n_support = initiate_chain(config, 
                                                           annotation_file=annotation_file,
@@ -378,6 +391,8 @@ def main():
                                                           precision_accum=precision_accum,
                                                           recall_accum=recall_accum, 
                                                           f1_dict=f1_dict,
+                                                          retriever_type=retriever_type,
+                                                          retriever_config=retriever_config,
                                                           n_support=n_support)
             sensitivity_list.append(sensitivity)
             precision_list.append(precision)
@@ -394,7 +409,8 @@ def main():
                    "sensitivity_avg": sum(sensitivity_list) / len(annotation_files), 
                    "precision_avg": sum(precision_list) / len(annotation_files), 
                    "f1_score_avg": sum(f1_score_list) / len(annotation_files), 
-                   "model_name": model_name})
+                   "model_name": model_name,
+                   "retriever_type": retriever_type})
 
         # Aggregate metrics and log as media to wandb
         for label in precision_accum:
@@ -422,6 +438,8 @@ def main():
                                                           model_config=model_config,
                                                           precision_accum=precision_accum,
                                                           recall_accum=recall_accum, 
+                                                          retriever_type=retriever_type,
+                                                          retriever_config=retriever_config,
                                                           f1_dict=f1_dict)
 
 
