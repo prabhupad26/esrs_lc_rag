@@ -1,17 +1,18 @@
 import os
 import re
+from typing import Dict
+
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-from typing import Dict
 
 from srn_data_collector.annotations_utils.data_model import (
+    BlobLvlAnnotations,
     ComplianceItems,
     ReportingRequirements,
     RptRequirementsMapping,
     StandardsList,
-    BlobLvlAnnotations,
-    ValuesWithRevisions
+    ValuesWithRevisions,
 )
 
 
@@ -47,7 +48,7 @@ def metadata_func(record: dict, metadata: dict) -> dict:
     return metadata
 
 
-def get_source_from_citem(citem_name:str, annotation_storage_config: Dict):
+def get_source_from_citem(citem_name: str, annotation_storage_config: Dict):
     Base = declarative_base()
     engine = create_engine(f"sqlite:///{annotation_storage_config['sqlite_db']}")
     Base.metadata.create_all(engine)
@@ -56,14 +57,14 @@ def get_source_from_citem(citem_name:str, annotation_storage_config: Dict):
     session = Session()
 
     result = (
-                session.query(RptRequirementsMapping.source)
-                .join(ReportingRequirements, RptRequirementsMapping.reporting_requirement_id == ReportingRequirements.id)\
-                .join(ComplianceItems, ReportingRequirements.id == ComplianceItems.reporting_requirement_id)\
-                .join(StandardsList, StandardsList.id == RptRequirementsMapping.standard)\
-                .filter(ComplianceItems.name == f'{citem_name}')\
-                .filter(StandardsList.family.like("%esrs%"))\
-                .all()
-        )
+        session.query(RptRequirementsMapping.source)
+        .join(ReportingRequirements, RptRequirementsMapping.reporting_requirement_id == ReportingRequirements.id)
+        .join(ComplianceItems, ReportingRequirements.id == ComplianceItems.reporting_requirement_id)
+        .join(StandardsList, StandardsList.id == RptRequirementsMapping.standard)
+        .filter(ComplianceItems.name == f"{citem_name}")
+        .filter(StandardsList.family.like("%esrs%"))
+        .all()
+    )
 
     session.close()
 
@@ -89,11 +90,10 @@ def get_annotations_db(source_section, document_id, annotation_storage_config):
         .filter(RptRequirementsMapping.source == f"{source_section}")
         .filter(ValuesWithRevisions.document_id == f"{document_id}")
         .filter(ComplianceItems.status == "active")
-        .filter(ValuesWithRevisions.document_ref not in ["", '\\', '/', 'from the previous data'])
-        .filter(ValuesWithRevisions.value not in ['', '\\', '/'])
+        .filter(ValuesWithRevisions.document_ref not in ["", "\\", "/", "from the previous data"])
+        .filter(ValuesWithRevisions.value not in ["", "\\", "/"])
         .all()
     )
-
 
     annotations = []
 
@@ -102,7 +102,7 @@ def get_annotations_db(source_section, document_id, annotation_storage_config):
         if (blob_id, document_ref) not in annotations:
             annotations.append((blob_id, document_ref))
 
-    session.close()    
+    session.close()
 
     return annotations
 

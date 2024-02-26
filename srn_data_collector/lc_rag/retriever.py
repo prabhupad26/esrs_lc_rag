@@ -3,10 +3,11 @@ import os
 from typing import Dict, List
 
 from langchain_community.document_loaders import JSONLoader
-from langchain_community.vectorstores import Chroma
+from langchain_community.vectorstores import FAISS, Chroma
 from langchain_core.callbacks import CallbackManagerForRetrieverRun
 from langchain_core.documents import Document
 from langchain_core.retrievers import BaseRetriever
+from langchain_core.vectorstores import VectorStoreRetriever
 from langchain_openai import OpenAIEmbeddings
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
@@ -17,10 +18,13 @@ from srn_data_collector.annotations_utils.data_model import (
     RptRequirementsMapping,
     StandardsList,
 )
-from srn_data_collector.lc_rag.utils import convert_file_name, metadata_func, get_source_from_citem, clean_text
-from langchain_core.vectorstores import VectorStoreRetriever
-from langchain_community.vectorstores import FAISS
-from langchain.text_splitter import CharacterTextSplitter
+from srn_data_collector.lc_rag.utils import (
+    clean_text,
+    convert_file_name,
+    get_source_from_citem,
+    metadata_func,
+)
+
 
 class WaliMLRetriever(BaseRetriever):
     retriever_config: Dict
@@ -52,11 +56,15 @@ class WaliMLRetriever(BaseRetriever):
             source_names: List[str] = get_source_from_citem(compliance_item, self.annotation_storage_config)
             for source_name in source_names:
                 if source_name == query:
-                    for recommendation, _ in recom_items['recommendations']:
-                        if recommendation["class_name"] not in ["header/footer"] and \
-                        (recommendation["blob_id"],recommendation["document_ref"]) not in result_buf:
-                            result_buf.append((recommendation["blob_id"],recommendation["document_ref"]))
-                            result.append(Document(page_content=clean_text(recommendation.pop("text")), metadata=recommendation))
+                    for recommendation, _ in recom_items["recommendations"]:
+                        if (
+                            recommendation["class_name"] not in ["header/footer"]
+                            and (recommendation["blob_id"], recommendation["document_ref"]) not in result_buf
+                        ):
+                            result_buf.append((recommendation["blob_id"], recommendation["document_ref"]))
+                            result.append(
+                                Document(page_content=clean_text(recommendation.pop("text")), metadata=recommendation)
+                            )
 
         if self.retriever_chroma:
             result.extend(self.retriever_chroma.invoke(query))
@@ -209,8 +217,9 @@ class FAISSRetriever:
         # splits_doc = text_splitter.split_documents(doc_data)
         vectorstore_doc = FAISS.from_documents(documents=doc_data, embedding=OpenAIEmbeddings())
         # retriever_doc = vectorstore_doc.as_retriever(search_type="similarity", search_kwargs={"k": search__topk})
-        retriever_doc = vectorstore_doc.as_retriever(search_type="similarity_score_threshold", 
-                                                     search_kwargs={"score_threshold": 0.4})
+        retriever_doc = vectorstore_doc.as_retriever(
+            search_type="similarity_score_threshold", search_kwargs={"score_threshold": 0.4}
+        )
         return retriever_doc
 
     def get_requirements(self, annotation_storage_config: Dict) -> Dict:

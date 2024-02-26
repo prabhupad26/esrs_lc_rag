@@ -1,34 +1,39 @@
 import argparse
+import json
 import os
 import pickle as pkl
-import json
 import re
 from typing import Dict, List
 
 import numpy as np
+import pandas as pd
 import wandb
 import yaml
 from langchain_core.documents import Document
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import PromptTemplate
-from sklearn.metrics import precision_score, recall_score, f1_score, precision_recall_fscore_support, confusion_matrix
+from sklearn.metrics import (
+    f1_score,
+    precision_recall_fscore_support,
+    precision_score,
+    recall_score,
+)
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from tqdm import tqdm
-import pandas as pd
 
 from srn_data_collector.annotations_utils.data_model import (
-    BlobLvlAnnotations,
-    ComplianceItems,
     EsrsReqMapping,
-    ReportingRequirements,
     RptRequirementsMapping,
     StandardsList,
-    ValuesWithRevisions,
 )
 from srn_data_collector.lc_rag.models import Model
-from srn_data_collector.lc_rag.retriever import ChromaDBRetriever, WaliMLRetriever, FAISSRetriever
+from srn_data_collector.lc_rag.retriever import (
+    ChromaDBRetriever,
+    FAISSRetriever,
+    WaliMLRetriever,
+)
 from srn_data_collector.lc_rag.utils import *
 
 
@@ -71,35 +76,37 @@ def get_requirements(waliml_retriever, annotation_storage_config):
     return all_req
 
 
-def get_source_section_annotations(source_section_dict: str, document_id,  annotation_storage_config: Dict) -> Dict[str, List[List[str]]]:
+def get_source_section_annotations(
+    source_section_dict: str, document_id, annotation_storage_config: Dict
+) -> Dict[str, List[List[str]]]:
     annotations = {}
-    
+
     for section in source_section_dict:
         annotations[section] = get_annotations_db(section, document_id, annotation_storage_config)
-    
+
     return annotations
-    
+
 
 def get_annotation_dict(annotation_file, annotation_storage_config) -> Dict[str, List[List[str]]]:
-
     with open(annotation_file, "r") as f:
         recommended_doc_dict = json.load(f)
 
     annotation_map = {}
 
     for compliance_item, recom_items in recommended_doc_dict.items():
-        gt = recom_items['ground_truth']
+        gt = recom_items["ground_truth"]
         source_names: List[str] = get_source_from_citem(compliance_item, annotation_storage_config)
         for source_name in source_names:
             if source_name not in annotation_map:
                 annotation_map[source_name] = []
-            for recommendation, _ in recom_items['recommendations']:
-                if gt == recommendation['text'] and \
-                recommendation["class_name"] not in ["header/footer"] and \
-                (recommendation["blob_id"],recommendation["document_ref"]) not in annotation_map[source_name]:
-                    annotation_map[source_name].append((recommendation["blob_id"], 
-                                                        recommendation["document_ref"]))
-    
+            for recommendation, _ in recom_items["recommendations"]:
+                if (
+                    gt == recommendation["text"]
+                    and recommendation["class_name"] not in ["header/footer"]
+                    and (recommendation["blob_id"], recommendation["document_ref"]) not in annotation_map[source_name]
+                ):
+                    annotation_map[source_name].append((recommendation["blob_id"], recommendation["document_ref"]))
+
     return annotation_map
 
 
@@ -133,9 +140,7 @@ def process_predicted_dict(predicted_dict):
         predicted_dict[rec_label] = [blob for rec in recommendations for blob in rec]
 
 
-
-def calculate_metrics(predicted_dict, actual_dict, model_name, 
-                      precision_accum, recall_accum, f1_dict, n_support):
+def calculate_metrics(predicted_dict, actual_dict, model_name, precision_accum, recall_accum, f1_dict, n_support):
     # Fetch the blob_id , document_ref from the db for the given requirement and compare
     process_predicted_dict(predicted_dict)
 
@@ -155,10 +160,9 @@ def calculate_metrics(predicted_dict, actual_dict, model_name,
             for predicted_value in predicted_dict[label]:
                 y_true.append("None")
                 y_pred.append(label)
-    
+
     # Overall score
     precision, sensitivity, f1_score_value, _ = precision_recall_fscore_support(y_true, y_pred, average="macro")
-
 
     n_support = len(y_true)
     y_true = np.array(y_true)
@@ -182,13 +186,10 @@ def calculate_metrics(predicted_dict, actual_dict, model_name,
         precision_accum[labels[i]] += precision_score(true_class_idx, pred_class_idx)
         recall_accum[labels[i]] += recall_score(true_class_idx, pred_class_idx)
         f1_dict[labels[i]] += f1_score(true_class_idx, pred_class_idx)
-    
-    
-    
-    
+
     # mAP_score = average_precision_score(np.array(y_true) == np.array(y_pred), np.array(y_pred) == np.array(y_true))
 
-    # wandb.log({"sensitivity": sensitivity, "precision": precision, 
+    # wandb.log({"sensitivity": sensitivity, "precision": precision,
     #            "f1_score": f1_score, "model_name": model_name})
 
     return sensitivity, precision, f1_score_value, n_support
@@ -204,7 +205,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--force",
-        action='store_true',
+        action="store_true",
         help="To regenerate the response generation",
     )
     return parser.parse_args()
@@ -216,15 +217,15 @@ def run(
     annotation_storage_config: Dict,
     retriever_type: str,
     req2blob_gt: dict,
-    model_config:Dict,
-    model_name:str,
-    req2blob_gt_db:Dict,
-    response_pickle_file:str,
+    model_config: Dict,
+    model_name: str,
+    req2blob_gt_db: Dict,
+    response_pickle_file: str,
     retriever_config: Dict,
-    model_type:str,
+    model_type: str,
     precision_accum: Dict,
-    recall_accum:Dict,
-    f1_dict:Dict,
+    recall_accum: Dict,
+    f1_dict: Dict,
     n_support: int,
     **config,
 ):
@@ -242,11 +243,13 @@ def run(
         top_n = retriever_config.pop("top_n")
         total_top_n = retriever_config.pop("total_top_n")
 
-        retriever = WaliMLRetriever(retriever_config=retriever_config, 
-                                    annotation_file=annotation_file,
-                                    total_top_n=total_top_n,
-                                    retriever_chroma=None,
-                                    annotation_storage_config=annotation_storage_config)
+        retriever = WaliMLRetriever(
+            retriever_config=retriever_config,
+            annotation_file=annotation_file,
+            total_top_n=total_top_n,
+            retriever_chroma=None,
+            annotation_storage_config=annotation_storage_config,
+        )
         # Get requirements list
         requirements_dict = retriever.get_requirements(annotation_storage_config)
         # retriever_results: List[Document] = waliml_retriever._get_relevant_documents("E1.AR43", run_manager=None)
@@ -258,15 +261,17 @@ def run(
         retriever_chroma = ChromaDBRetriever(document_id=document_id, retriever_config=retriever_config)
         retriever_chroma = retriever_chroma()
 
-        retriever = WaliMLRetriever(retriever_config=retriever_config,
-                                    annotation_file=annotation_file,
-                                    total_top_n=total_top_n,
-                                    retriever_chroma=retriever_chroma,
-                                    annotation_storage_config=annotation_storage_config)
+        retriever = WaliMLRetriever(
+            retriever_config=retriever_config,
+            annotation_file=annotation_file,
+            total_top_n=total_top_n,
+            retriever_chroma=retriever_chroma,
+            annotation_storage_config=annotation_storage_config,
+        )
         # Get requirements list
         requirements_dict = retriever.get_requirements(annotation_storage_config)
         # retriever_results: List[Document] = waliml_retriever._get_relevant_documents("E1.AR43", run_manager=None)
-    
+
     elif retriever_type == "faiss":
         retriever = FAISSRetriever(document_id=document_id, retriever_config=retriever_config)
         # Get requirements list
@@ -281,15 +286,16 @@ def run(
         retriever_faiss = FAISSRetriever(document_id=document_id, retriever_config=retriever_config)
         retriever_faiss = retriever_faiss()
 
-        retriever = WaliMLRetriever(retriever_config=retriever_config,
-                                    annotation_file=annotation_file,
-                                    total_top_n=total_top_n,
-                                    retriever_chroma=retriever_faiss,
-                                    annotation_storage_config=annotation_storage_config)
+        retriever = WaliMLRetriever(
+            retriever_config=retriever_config,
+            annotation_file=annotation_file,
+            total_top_n=total_top_n,
+            retriever_chroma=retriever_faiss,
+            annotation_storage_config=annotation_storage_config,
+        )
         # Get requirements list
         requirements_dict = retriever.get_requirements(annotation_storage_config)
         # retriever_results: List[Document] = waliml_retriever._get_relevant_documents("E1.AR43", run_manager=None)
-    
 
     print(f"Initializing models...")
     model_obj = Model.from_config(type=model_type, name=model_name, **model_config)
@@ -312,9 +318,9 @@ def run(
             print(f"Requirement{req_label} text is not available in database")
             # requirements_dict[req_label] = ''
             continue
-        
-        rag_response = ''
-        
+
+        rag_response = ""
+
         try:
             rag_response = rag_chain.invoke(req_label)
         except SystemError:
@@ -342,62 +348,70 @@ def run(
         pkl.dump(results, f)
 
     # Evaluate results
-    return calculate_metrics(results, req2blob_gt_db, model_name, 
-                             precision_accum, recall_accum, f1_dict, n_support)
+    return calculate_metrics(results, req2blob_gt_db, model_name, precision_accum, recall_accum, f1_dict, n_support)
 
 
-def initiate_chain(config, annotation_file, model_name, model_type, model_config,
-                   precision_accum, recall_accum, f1_dict, retriever_type,retriever_config,
-                   force_rerun, n_support=0):
+def initiate_chain(
+    config,
+    annotation_file,
+    model_name,
+    model_type,
+    model_config,
+    precision_accum,
+    recall_accum,
+    f1_dict,
+    retriever_type,
+    retriever_config,
+    force_rerun,
+    n_support=0,
+):
     annotation_storage_config = config.pop("annotation_storage_config")
     result_path = config.pop("result_path")
     document_id = get_doc_name(annotation_file)
-    
-    
 
     # Init chain
     lc_config = config.pop("lang_chain_config")
     if lc_config.get("enable_langsmith_tracing"):
         assert os.environ["LANGCHAIN_TRACING_V2"] == "true", "LANGCHAIN is not enabled"
         assert "LANGCHAIN_API_KEY" in os.environ, "LANGCHAIN API KEY is not set"
-    
-    
+
     response_pickle_file = os.path.join(result_path, f"{document_id}_{retriever_type}_{model_name}.pkl")
-    
+
     # req2blob_gt: Dict[str, List[List[str]]] = get_annotation_dict(annotation_file, annotation_storage_config)
     req2blob_gt: Dict[str, List[List[str]]] = get_annotation_dict(annotation_file, annotation_storage_config)
-    req2blob_gt_db = get_source_section_annotations(source_section_dict=req2blob_gt,
-                                                    document_id=document_id,
-                                                    annotation_storage_config=annotation_storage_config)
+    req2blob_gt_db = get_source_section_annotations(
+        source_section_dict=req2blob_gt, document_id=document_id, annotation_storage_config=annotation_storage_config
+    )
 
     if os.path.exists(response_pickle_file) and not force_rerun:
         # code for debug existing response.pkl file
         with open(response_pickle_file, "rb") as file:
             results = pkl.load(file)
-        
+
         # sensitivity, precision, f1_score = calculate_metrics(results, req2blob_gt)
-        sensitivity, precision, f1_score, n_support = calculate_metrics(results, req2blob_gt_db, model_name,
-                                                             precision_accum, recall_accum, f1_dict,
-                                                             n_support=n_support)
+        sensitivity, precision, f1_score, n_support = calculate_metrics(
+            results, req2blob_gt_db, model_name, precision_accum, recall_accum, f1_dict, n_support=n_support
+        )
     else:
         sensitivity, precision, f1_score, n_support = run(
-                                                document_id=document_id,
-                                                annotation_storage_config=annotation_storage_config,
-                                                retriever_type=retriever_type,
-                                                req2blob_gt=req2blob_gt,
-                                                model_config=model_config,
-                                                model_name=model_name,
-                                                req2blob_gt_db=req2blob_gt_db,
-                                                response_pickle_file=response_pickle_file,
-                                                retriever_config=retriever_config,
-                                                model_type=model_type,
-                                                precision_accum=precision_accum,
-                                                recall_accum=recall_accum,
-                                                f1_dict=f1_dict,
-                                                n_support=n_support,
-                                                **config
-                                            )
+            document_id=document_id,
+            annotation_storage_config=annotation_storage_config,
+            retriever_type=retriever_type,
+            req2blob_gt=req2blob_gt,
+            model_config=model_config,
+            model_name=model_name,
+            req2blob_gt_db=req2blob_gt_db,
+            response_pickle_file=response_pickle_file,
+            retriever_config=retriever_config,
+            model_type=model_type,
+            precision_accum=precision_accum,
+            recall_accum=recall_accum,
+            f1_dict=f1_dict,
+            n_support=n_support,
+            **config,
+        )
     return sensitivity, precision, f1_score, n_support
+
 
 def main():
     args = parse_args()
@@ -411,16 +425,13 @@ def main():
     n_support = 0
     metrics_dict = {}
 
-    
-
-
     run_wandb = wandb.init(project="thesis-llm")
 
     annotation_files = config.pop("annotation_files", None)
     retriever_config = config.pop("retriever_config")[0]
     retriever_type = retriever_config.pop("type")
-    
-    annotation_files = [os.path.join(annotation_files, file)for file in os.listdir(annotation_files)]
+
+    annotation_files = [os.path.join(annotation_files, file) for file in os.listdir(annotation_files)]
 
     if annotation_files:
         for annotation_file in tqdm(annotation_files, desc="Running main chain for documents"):
@@ -433,35 +444,41 @@ def main():
             retriever_config = config.pop("retriever_config")[0]
             retriever_type = retriever_config.pop("type")
 
-            sensitivity, precision, f1_score, n_support = initiate_chain(config, 
-                                                          annotation_file=annotation_file,
-                                                          model_name=model_name,
-                                                          model_type=model_type, 
-                                                          model_config=model_config,
-                                                          precision_accum=precision_accum,
-                                                          recall_accum=recall_accum, 
-                                                          f1_dict=f1_dict,
-                                                          retriever_type=retriever_type,
-                                                          retriever_config=retriever_config,
-                                                          force_rerun=args.force,
-                                                          n_support=n_support)
+            sensitivity, precision, f1_score, n_support = initiate_chain(
+                config,
+                annotation_file=annotation_file,
+                model_name=model_name,
+                model_type=model_type,
+                model_config=model_config,
+                precision_accum=precision_accum,
+                recall_accum=recall_accum,
+                f1_dict=f1_dict,
+                retriever_type=retriever_type,
+                retriever_config=retriever_config,
+                force_rerun=args.force,
+                n_support=n_support,
+            )
             sensitivity_list.append(sensitivity)
             precision_list.append(precision)
             f1_score_list.append(f1_score)
 
-        # wandb.log({"sensitivity": sum(sensitivity_list)/len(annotation_files), 
-        #            "precision": sum(precision_list)/len(annotation_files), 
-        #            "f1_score": sum(f1_score_list)/len(annotation_files), 
+        # wandb.log({"sensitivity": sum(sensitivity_list)/len(annotation_files),
+        #            "precision": sum(precision_list)/len(annotation_files),
+        #            "f1_score": sum(f1_score_list)/len(annotation_files),
         #            "model_name": model_name})
 
-        wandb.log({"sensitivity_best": max(sensitivity_list), 
-                   "precision_best": max(precision_list), 
-                   "f1_score_best": max(f1_score_list), 
-                   "sensitivity_avg": sum(sensitivity_list) / len(annotation_files), 
-                   "precision_avg": sum(precision_list) / len(annotation_files), 
-                   "f1_score_avg": sum(f1_score_list) / len(annotation_files), 
-                   "model_name": model_name,
-                   "retriever_type": retriever_type})
+        wandb.log(
+            {
+                "sensitivity_best": max(sensitivity_list),
+                "precision_best": max(precision_list),
+                "f1_score_best": max(f1_score_list),
+                "sensitivity_avg": sum(sensitivity_list) / len(annotation_files),
+                "precision_avg": sum(precision_list) / len(annotation_files),
+                "f1_score_avg": sum(f1_score_list) / len(annotation_files),
+                "model_name": model_name,
+                "retriever_type": retriever_type,
+            }
+        )
 
         # Aggregate metrics and log as media to wandb
         for label in precision_accum:
@@ -470,30 +487,30 @@ def main():
             f1_avg = f1_dict[label] / len(annotation_files)
 
             # Create a dictionary with metrics
-            metrics_dict[f'Precision_Class_{label}'] = [precision_avg]
-            metrics_dict[f'Recall_Class_{label}'] = [recall_avg]
-            metrics_dict[f'F1_Score_Class_{label}'] = [f1_avg]
+            metrics_dict[f"Precision_Class_{label}"] = [precision_avg]
+            metrics_dict[f"Recall_Class_{label}"] = [recall_avg]
+            metrics_dict[f"F1_Score_Class_{label}"] = [f1_avg]
 
         # Log metrics as media
-        wandb.log({'metrics': wandb.Table(data=pd.DataFrame(metrics_dict), 
-                                          columns=list(metrics_dict.keys()))}, commit=False)
+        wandb.log(
+            {"metrics": wandb.Table(data=pd.DataFrame(metrics_dict), columns=list(metrics_dict.keys()))}, commit=False
+        )
 
-
-    
     else:
         # For single doc debug
-        sensitivity, precision, f1_score = initiate_chain(config, 
-                                                          annotation_file=config.pop("annotation_file"),
-                                                          model_name=model_name,
-                                                          model_type=model_type, 
-                                                          model_config=model_config,
-                                                          precision_accum=precision_accum,
-                                                          recall_accum=recall_accum, 
-                                                          retriever_type=retriever_type,
-                                                          retriever_config=retriever_config,
-                                                          f1_dict=f1_dict,
-                                                          force_rerun=args.force,)
-
+        sensitivity, precision, f1_score = initiate_chain(
+            config,
+            annotation_file=config.pop("annotation_file"),
+            model_name=model_name,
+            model_type=model_type,
+            model_config=model_config,
+            precision_accum=precision_accum,
+            recall_accum=recall_accum,
+            retriever_type=retriever_type,
+            retriever_config=retriever_config,
+            f1_dict=f1_dict,
+            force_rerun=args.force,
+        )
 
     run_wandb.finish()
 
