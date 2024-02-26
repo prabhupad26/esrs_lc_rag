@@ -14,30 +14,48 @@ prompt_config:
 
 
 retriever_config:
- - type: cosine-retriever # langchain in-built
+#  - type: cosine-retriever # langchain in-built
+#    file_path: "/root/repo/data/srn_raw_json/"
+#    jq_schema: '.doc_data[]'
+#    text_content: False
+#    content_key: 'text'
+#    search__topk: 20
+#  - type: wali-ml
+#    top_n: 5
+#    total_top_n: 20
+#  - type: chroma+wali # langchain in-built
+#    file_path: "/root/repo/data/srn_raw_json/"
+#    jq_schema: '.doc_data[]'
+#    text_content: False
+#    content_key: 'text'
+#    search__topk: 20
+#    top_n: 5
+#    total_top_n: 5
+ - type: faiss # langchain in-built
    file_path: "/root/repo/data/srn_raw_json/"
    jq_schema: '.doc_data[]'
    text_content: False
    content_key: 'text'
    search__topk: 20
-  #  - type: wali-ml
-  #    debug_doc:
-  #      top_n: 5
-  #      total_top_n: 20
-  #      path: "/root/repo/data/srn_recommendations/3023e67b-bfb2-4886-bcfb-7650c1e6b024.json"
-  #    doc_batch:
-  #      path: "/root/repo/data/srn_recommendations/"
+#  - type: faiss+wali # langchain in-built
+#    file_path: "/root/repo/data/srn_raw_json/"
+#    jq_schema: '.doc_data[]'
+#    text_content: False
+#    content_key: 'text'
+#    search__topk: 20
+#    top_n: 5
+#    total_top_n: 25
 
 lang_chain_config:
   enable_langsmith_tracing: True
 
 model_config:
   - type: "gpt"
-    name: "gpt-3.5-turbo_top20" #"gpt-4"
+    name: "gpt-3.5-turbo_w_scr_thresh0.5" #"gpt-4"
     model_name: "gpt-3.5-turbo" # "gpt-4"
     temperature: 0
   # - type: "llama"
-  #   name: llama-2-70b-chat.Q3_K_L.gguf_ptype_1 #"llama-2-7b-chat.Q3_K_L.gguf" # "llama-2-70b-chat.Q3_K_L.gguf", llama-2-70b-chat.Q3_K_L.gguf, 
+  #   name: llama-2-70b-chat.Q3_K_L.gguf #"llama-2-7b-chat.Q3_K_L.gguf" # "llama-2-70b-chat.Q3_K_L.gguf", llama-2-70b-chat.Q3_K_L.gguf, 
   #   model_path: "/scratch/llama_models/llama-2-70b-chat.Q3_K_L.gguf"
   #   n_gpu_layers: -1
   #   n_batch: 512

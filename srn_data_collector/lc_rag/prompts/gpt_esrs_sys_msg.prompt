@@ -8,5 +8,6 @@ descending order of relevance. The output format
 should be [] > [], e.g., [1] > [2] > [0]. Only respond
 with the ranking results, do not say any word or explain.
 Requirement: {sample_requirement}
-Passages: {passage_data}
+Passages: 
+{passage_data}
 Response:

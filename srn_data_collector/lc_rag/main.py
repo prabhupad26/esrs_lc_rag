@@ -28,7 +28,7 @@ from srn_data_collector.annotations_utils.data_model import (
     ValuesWithRevisions,
 )
 from srn_data_collector.lc_rag.models import Model
-from srn_data_collector.lc_rag.retriever import ChromaDBRetriever, WaliMLRetriever
+from srn_data_collector.lc_rag.retriever import ChromaDBRetriever, WaliMLRetriever, FAISSRetriever
 from srn_data_collector.lc_rag.utils import *
 
 
@@ -202,11 +202,17 @@ def parse_args() -> argparse.Namespace:
         type=str,
         help="Path to config",
     )
+    parser.add_argument(
+        "--force",
+        action='store_true',
+        help="To regenerate the response generation",
+    )
     return parser.parse_args()
 
 
 def run(
     document_id: str,
+    annotation_file: str,
     annotation_storage_config: Dict,
     retriever_type: str,
     req2blob_gt: dict,
@@ -233,13 +239,57 @@ def run(
         # retriever_results: List[Document] = retriever.invoke("GHG emissions")
 
     elif retriever_type == "wali-ml":
+        top_n = retriever_config.pop("top_n")
+        total_top_n = retriever_config.pop("total_top_n")
+
         retriever = WaliMLRetriever(retriever_config=retriever_config, 
+                                    annotation_file=annotation_file,
+                                    total_top_n=total_top_n,
+                                    retriever_chroma=None,
                                     annotation_storage_config=annotation_storage_config)
         # Get requirements list
         requirements_dict = retriever.get_requirements(annotation_storage_config)
         # retriever_results: List[Document] = waliml_retriever._get_relevant_documents("E1.AR43", run_manager=None)
 
-    # req2blob_gt: Dict[str, List[List[str]]] = get_annotation_dict(annotation_file, annotation_storage_config)
+    elif retriever_type == "chroma+wali":
+        top_n = retriever_config.pop("top_n")
+        total_top_n = retriever_config.pop("total_top_n")
+
+        retriever_chroma = ChromaDBRetriever(document_id=document_id, retriever_config=retriever_config)
+        retriever_chroma = retriever_chroma()
+
+        retriever = WaliMLRetriever(retriever_config=retriever_config,
+                                    annotation_file=annotation_file,
+                                    total_top_n=total_top_n,
+                                    retriever_chroma=retriever_chroma,
+                                    annotation_storage_config=annotation_storage_config)
+        # Get requirements list
+        requirements_dict = retriever.get_requirements(annotation_storage_config)
+        # retriever_results: List[Document] = waliml_retriever._get_relevant_documents("E1.AR43", run_manager=None)
+    
+    elif retriever_type == "faiss":
+        retriever = FAISSRetriever(document_id=document_id, retriever_config=retriever_config)
+        # Get requirements list
+        requirements_dict = retriever.get_requirements(annotation_storage_config)
+        retriever = retriever()
+        # retriever_results: List[Document] = retriever.invoke("GHG emissions")
+
+    elif retriever_type == "faiss+wali":
+        top_n = retriever_config.pop("top_n")
+        total_top_n = retriever_config.pop("total_top_n", None)
+
+        retriever_faiss = FAISSRetriever(document_id=document_id, retriever_config=retriever_config)
+        retriever_faiss = retriever_faiss()
+
+        retriever = WaliMLRetriever(retriever_config=retriever_config,
+                                    annotation_file=annotation_file,
+                                    total_top_n=total_top_n,
+                                    retriever_chroma=retriever_faiss,
+                                    annotation_storage_config=annotation_storage_config)
+        # Get requirements list
+        requirements_dict = retriever.get_requirements(annotation_storage_config)
+        # retriever_results: List[Document] = waliml_retriever._get_relevant_documents("E1.AR43", run_manager=None)
+    
 
     print(f"Initializing models...")
     model_obj = Model.from_config(type=model_type, name=model_name, **model_config)
@@ -273,9 +323,9 @@ def run(
         if req_label not in results:
             results[req_label] = []
 
-        if retriever_type == "cosine-retriever":
+        if retriever_type in ["cosine-retriever", "faiss"]:
             retriever_results: List[Document] = retriever.invoke(requirements_dict[req_label])
-        elif retriever_type == "wali-ml":
+        elif retriever_type in ["wali-ml", "chroma+wali", "faiss+wali"]:
             retriever_results: List[Document] = retriever._get_relevant_documents(req_label, run_manager=None)
 
         # if retriever_results:
@@ -298,7 +348,7 @@ def run(
 
 def initiate_chain(config, annotation_file, model_name, model_type, model_config,
                    precision_accum, recall_accum, f1_dict, retriever_type,retriever_config,
-                   n_support=0):
+                   force_rerun, n_support=0):
     annotation_storage_config = config.pop("annotation_storage_config")
     result_path = config.pop("result_path")
     document_id = get_doc_name(annotation_file)
@@ -320,7 +370,7 @@ def initiate_chain(config, annotation_file, model_name, model_type, model_config
                                                     document_id=document_id,
                                                     annotation_storage_config=annotation_storage_config)
 
-    if os.path.exists(response_pickle_file):
+    if os.path.exists(response_pickle_file) and not force_rerun:
         # code for debug existing response.pkl file
         with open(response_pickle_file, "rb") as file:
             results = pkl.load(file)
@@ -393,6 +443,7 @@ def main():
                                                           f1_dict=f1_dict,
                                                           retriever_type=retriever_type,
                                                           retriever_config=retriever_config,
+                                                          force_rerun=args.force,
                                                           n_support=n_support)
             sensitivity_list.append(sensitivity)
             precision_list.append(precision)
@@ -440,7 +491,8 @@ def main():
                                                           recall_accum=recall_accum, 
                                                           retriever_type=retriever_type,
                                                           retriever_config=retriever_config,
-                                                          f1_dict=f1_dict)
+                                                          f1_dict=f1_dict,
+                                                          force_rerun=args.force,)
 
 
     run_wandb.finish()

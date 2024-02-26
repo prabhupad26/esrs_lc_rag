@@ -88,6 +88,9 @@ def get_annotations_db(source_section, document_id, annotation_storage_config):
         .filter(StandardsList.family.like("%esrs%"))
         .filter(RptRequirementsMapping.source == f"{source_section}")
         .filter(ValuesWithRevisions.document_id == f"{document_id}")
+        .filter(ComplianceItems.status == "active")
+        .filter(ValuesWithRevisions.document_ref not in ["", '\\', '/', 'from the previous data'])
+        .filter(ValuesWithRevisions.value not in ['', '\\', '/'])
         .all()
     )
 
